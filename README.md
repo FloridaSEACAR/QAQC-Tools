@@ -10,3 +10,11 @@ The purpose of this repository is to act as a store of any scripts relevent to t
 * Summary results are viewed using `View(group_df)`
 * Unique *SEACAR_QAQCFlagCode* values are provided to see which QAQCFlagCodes are being applied by the database
 * Assuming the thresholds and their respective QAQCFlagCodes are being applied correctly on the database side, *threshold_data_combined* should return 0 results, and *group_df* will return an error upon compiling
+
+## unzip.R
+
+* unzip.R can be used to unzip the Combined Export Table files
+* Script should be placed into the folder where your most recent files have been downloaded
+* *downloaddate* variable should be set to the date listed in the .zip files using the format "YYYY-MM-DD"
+* *folder_name* variable is set to determine where unzipped files should be placed. Default is "SEACARdata"
+* .zip files are removed upon completion. Comment out lines 25 and 29 to keep .zip files
