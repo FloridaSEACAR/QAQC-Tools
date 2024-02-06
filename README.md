@@ -1,6 +1,7 @@
 # QAQC-Tools
 
 The purpose of this repository is to act as a store of any scripts relevent to the internal QAQC process within SEACAR.
+Many scripts contain the variable "seacar_data_location" which points to the location where SEACAR combined tables can be found. Must be set by the user.
 
 ## ContinuousThresholdCheck.R
 
@@ -18,3 +19,6 @@ The purpose of this repository is to act as a store of any scripts relevent to t
 * *downloaddate* variable should be set to the date listed in the .zip files using the format "YYYY-MM-DD"
 * *folder_name* variable is set to determine where unzipped files should be placed. Default is "SEACARdata"
 * .zip files are removed upon completion. Comment out lines 25 and 29 to keep .zip files
+
+## ParameterList.R
+* Generates a .xlsx file that records which parameters are included in Combined Export Tables and records the number of records and the data file used.
