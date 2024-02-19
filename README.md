@@ -3,6 +3,14 @@
 The purpose of this repository is to act as a store of any scripts relevent to the internal QAQC process within SEACAR.
 Many scripts contain the variable "seacar_data_location" which points to the location where SEACAR combined tables can be found. Must be set by the user.
 
+## /comparison/
+* Script intended to highlighted differences in structure between Combined export tables
+* Generates LaTeX-based .PDF reports outlining differences
+* Currently highlights differences between exports for the following:
+    + number of records (data entries)
+    + number of programs
+    + number of columns
+
 ## ContinuousThresholdCheck.R
 
 * Loops through the data location (specified using the variable *seacar_data_location*) and looks for relevant Continuous combined tables
