@@ -1,0 +1,242 @@
+---
+title: "Discrete QAQC Report"
+author: "SIDQCACBGD - SEACAR Internal Divison of Quality Control and Assurance  \nAnalytical Center for the Betterment and Goodification of Data"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document:
+    extra_dependencies: ["float"]
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+# extrafont::loadfonts()
+# extrafont::font_import()
+
+```
+
+# Discrete QAQC Report
+
+This document is intended to provide an overview of newly-exported Combined Tables.  
+
+The following *Combined_WQ_WC_NUT_* files are included in the analysis:
+
+```{r file_name_display, results='asis', eval=FALSE}
+
+params <- names(data_directory)
+
+for(p in params){
+  file_name <- data_directory[[p]]["file_name"]
+  cat(paste0("* *",file_name,"*  \n"))
+}
+
+```
+
+# Comparison of Current and Previous Exports - Overview
+
+```{r comparison, results='asis'}
+# Function to return report-ready datatable format
+make_kable <- function(data_table, table_caption){
+  return(
+    kable(data_table,
+          format="simple",
+          caption=table_caption,
+          booktabs=T) %>%
+      kable_styling(latex_options = c("scale_down","HOLD_position"),
+                    position = "center",
+                    font_size = 10)
+    )
+}
+
+old_new_table <- old_new_data %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(cell_color = ifelse(difference<0, "red", ifelse(difference>10000, "orange", "black"))) %>%
+  dplyr::mutate(difference = cell_spec(difference, color=cell_color)) %>%
+  select(-cell_color)
+
+print(make_kable(old_new_table, "Comparison of New vs. Old data exports"))
+cat("  \n")
+
+```
+
+
+
+
+```{r program_overview_table, results='asis', eval=FALSE}
+cat("# Program Overview Table")
+cat("  \n")
+
+# programs_wide2 <- programs_wide %>%
+#   mutate_all(funs(str_replace(., "1", "\\checkmark")))
+
+programs_wide_kable <- kable(programs_wide,
+                             format="latex",
+                             caption="ProgramID Overview",
+                             booktabs=T) %>%
+  kable_styling(latex_options = c("scale_down","HOLD_position"),
+                position = "center",
+                font_size = 10)
+
+print(programs_wide_kable)
+
+cat("  \n")
+
+```
+
+
+```{r program_comparison, results='asis', echo=TRUE, eval=TRUE}
+
+colorize <- function(x, color) {sprintf("\\textcolor{%s}{%s}", color, x)}
+
+if(length(names(data_directory[['program_compare']]))>0){
+  programs_differ <- TRUE
+}
+if(length(names(data_directory[['column_compare']]))>0){
+  columns_differ <- TRUE
+}
+
+if(programs_differ == TRUE){
+  cat("\\newpage")
+  cat("  \n")
+  cat("# Program Differences")
+  cat("  \n")
+  cat(paste0(colorize("Red", "red")," ProgramIDs are Programs in the Old Exports but not in the New Exports  \n"))
+  cat(paste0(colorize("Green", "green")," ProgramIDs are Programs in the New Exports but not in the Old Exports  \n"))
+  cat("There is a difference in Programs between exports for the following parameters:")
+  cat("    \n")
+  cat("  \n")
+  for(par in names(data_directory[['program_compare']])){
+    cat("  \n")
+    cat(glue("## {par}"))
+    cat("  \n")
+    cat("Programs in old export: ")
+    cat("  \n")
+    cat(data_directory[['program_compare']][[par]]$old_programs)
+    cat("  \n")
+    cat("Programs in new export: ")
+    cat("  \n")
+    cat(data_directory[['program_compare']][[par]]$new_programs)
+    cat("  \n")
+    cat("Differences: ")
+    diff_df <- data_directory[['program_compare']][[par]]$diff_df
+    for(i in 1:nrow(diff_df)){
+      cat(colorize(diff_df[i]$pid, diff_df[i]$color_code))
+      cat(", ")
+    }
+    cat("  \n")
+  }
+  cat("  \n")
+}
+
+if(columns_differ == TRUE){
+  cat("  \n")
+  cat("# Column Differences")
+  cat("There is a difference in Columns between exports for the following parameters:")
+  cat("  \n")
+  for(par in names(data_directory[['column_compare']])){
+    cat(glue("## {par}  \n"))
+    make_kable(data_directory[['column_compare']][[par]], "Column Comparison")
+    cat("  \n")
+  }
+  cat("  \n")
+}
+
+```
+
+\newpage
+# Detailed Comparison
+```{r detailed_comparison, results='asis', echo=TRUE, eval=FALSE}
+
+for(p in names(data_directory)){
+  cat("  \n")
+  cat(glue("## {p}"))
+  cat("  \n")
+  print(summary(data_directory[[p]][["comparison"]]))
+  cat("  \n")
+}
+
+```
+
+
+```{r value_qualifiers, results='asis', eval=TRUE}
+## Plotting function
+plot_vq_barplot <- function(vq_source){
+  if(vq_source=="STORET_WIN"){
+    vq_program_table_subset <- vq_program_table[ValueQualifierSource==vq_source, ]
+  } else if(vq_source=="SWMP"){
+    vq_program_table_subset <- vq_program_table[ValueQualifierSource==vq_source, ]
+  }
+  
+  plot_data <- vq_program_table_subset %>% 
+    group_by(ProgramID, ValueQualifier) %>% 
+    summarise(n = sum(n_vq_data),
+              percentage = n / sum(vq_program_table_subset$n_vq_data)*100)
+  
+  plot_title <- paste0("Percentage of Value Qualified values for each program by VQ - ", vq_source)
+  
+  if(nrow(vq_program_table[ValueQualifierSource==vq_source])){
+    return(
+      print(
+        ggplot(data=plot_data, aes(x=as.factor(ProgramID), y=percentage, fill=as.factor(ValueQualifier))) + 
+          geom_bar(stat = "identity") +
+          scale_fill_viridis(discrete = T, ) +
+          labs(title = "Percentage of Value Qualified values for each program by VQ", 
+               x="ProgramID", y="Percentage of total") +
+          guides(fill=guide_legend(title="Value Qualifier"))
+      )
+    )
+  }
+}
+
+if(collect_vq_data==TRUE){
+  cat("\\newpage")
+  cat("# Analysis of Value Qualifiers")
+  cat("  \n")
+  for(p in names(data_directory[["vq_table"]])){
+    if(nrow(data_directory[["vq_table"]][[p]])){
+      cat(glue("## {p}"))
+      cat("  \n")
+      vq_table <- kable(data_directory[["vq_table"]][[p]],
+                        format="simple",
+                        caption="Value Qualifier Overview") %>%
+        kable_styling(latex_options = "scale_down",
+                      position = "center",
+                      font_size = 10)
+      
+      print(vq_table)
+      cat("  \n")
+      
+      vq_program_table <- setDT(data_directory[["vq_program_table"]][[p]] %>% ungroup())
+      vq_program_kable <- kable(vq_program_table %>%
+                                  select(-ProgramName) %>%
+                                  pivot_wider(names_from = ValueQualifier, values_from = n_vq_data, values_fill = 0) %>%
+                                  arrange(ProgramID),
+                                format="latex",
+                                caption="Value Qualifier Overview by Program",
+                                booktabs=T) %>%
+        kable_styling(latex_options = c("scale_down","HOLD_position"),
+                      position = "center")
+      
+      print(vq_program_kable)
+      
+      cat("  \n")
+      cat("**STORET_WIN**  \n")
+      plot_vq_barplot("STORET_WIN")
+      
+      cat("  \n")
+      cat("**SWMP**  \n")
+      plot_vq_barplot("SWMP")
+      
+      cat("  \n")
+      cat("Problematic Programs:  \n")
+      for(p_id in unique(vq_program_table$ProgramID)){
+        p_name <- vq_program_table[ProgramID==p_id, unique(ProgramName)]
+        cat("  \n")
+        cat(paste0("* **",p_id,"** - *",p_name,"*"))
+        cat("  \n")
+      }
+      cat("  \n")
+    }
+  }
+}
+
+```
