@@ -1,6 +1,6 @@
 ---
 title: "Discrete QAQC Report"
-author: "SIDQCACBGD - SEACAR Internal Divison of Quality Control and Assurance  \nAnalytical Center for the Betterment and Goodification of Data"
+author: "TILER - Tediously Interpreting Layers of Extraneous Reporting"
 date: "`r Sys.Date()`"
 output: 
   pdf_document:
@@ -47,7 +47,13 @@ make_kable <- function(data_table, table_caption){
     )
 }
 
-old_new_table <- old_new_data %>%
+if(habitat=="Discrete"){
+  data_overview <- old_new_data
+} else if(habitat %in% c("CORAL","CW","NEKTON","Oyster","SAV")){
+  data_overview <- habitat_data
+}
+
+old_new_table <- data_overview %>%
   dplyr::rowwise() %>%
   dplyr::mutate(cell_color = ifelse(difference<0, "red", ifelse(difference>10000, "orange", "black"))) %>%
   dplyr::mutate(difference = cell_spec(difference, color=cell_color)) %>%
@@ -83,7 +89,7 @@ cat("  \n")
 ```
 
 
-```{r program_comparison, results='asis', echo=TRUE, eval=TRUE}
+```{r program_comparison, results='asis', echo=FALSE, eval=TRUE}
 
 colorize <- function(x, color) {sprintf("\\textcolor{%s}{%s}", color, x)}
 
@@ -108,33 +114,44 @@ if(programs_differ == TRUE){
     cat("  \n")
     cat(glue("## {par}"))
     cat("  \n")
-    cat("Programs in old export: ")
+    cat(paste0("Programs in old export: (n=", length(data_directory[['program_compare']][[par]]$old_programs),")"))
     cat("  \n")
-    cat(data_directory[['program_compare']][[par]]$old_programs)
+    cat(data_directory[['program_compare']][[par]]$old_programs, sep=", ")
     cat("  \n")
-    cat("Programs in new export: ")
+    cat(paste0("Programs in new export: (n=", length(data_directory[['program_compare']][[par]]$new_programs),")"))
     cat("  \n")
-    cat(data_directory[['program_compare']][[par]]$new_programs)
+    cat(data_directory[['program_compare']][[par]]$new_programs, sep=", ")
     cat("  \n")
-    cat("Differences: ")
-    diff_df <- data_directory[['program_compare']][[par]]$diff_df
-    for(i in 1:nrow(diff_df)){
-      cat(colorize(diff_df[i]$pid, diff_df[i]$color_code))
-      cat(", ")
-    }
+    cat("  \n")
+    # cat("Differences: ")
+    # diff_df <- data_directory[['program_compare']][[par]]$diff_df
+    # for(i in 1:nrow(diff_df)){
+    #   cat(colorize(diff_df[i]$pid, diff_df[i]$color_code))
+    #   if(!i==nrow(diff_df)){cat(", ")}
+    # }
     cat("  \n")
   }
   cat("  \n")
 }
 
 if(columns_differ == TRUE){
+  cat("\\newpage")
   cat("  \n")
   cat("# Column Differences")
+  cat("  \n")
   cat("There is a difference in Columns between exports for the following parameters:")
   cat("  \n")
   for(par in names(data_directory[['column_compare']])){
-    cat(glue("## {par}  \n"))
-    make_kable(data_directory[['column_compare']][[par]], "Column Comparison")
+    cat("  \n")
+    cat(glue("## {par}"))
+    cat("  \n")
+    cat("Columns in old export: ")
+    cat("  \n")
+    print(make_kable(data_directory[['column_compare']][[par]][["oldColumns"]], "Old Columns"))
+    cat("  \n")
+    cat("Columns in new export: ")
+    cat("  \n")
+    print(make_kable(data_directory[['column_compare']][[par]][["newColumns"]], "New Columns"))
     cat("  \n")
   }
   cat("  \n")
@@ -142,9 +159,11 @@ if(columns_differ == TRUE){
 
 ```
 
-\newpage
-# Detailed Comparison
-```{r detailed_comparison, results='asis', echo=TRUE, eval=FALSE}
+
+```{r detailed_comparison, results='asis', echo=FALSE, eval=FALSE}
+cat("\\newpage")
+cat("# Detailed Comparison")
+cat("  \n")
 
 for(p in names(data_directory)){
   cat("  \n")

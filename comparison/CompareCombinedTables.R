@@ -23,13 +23,16 @@ source("seacar_data_location.R")
 # Old files in /SEACARdata/archive
 
 files <- list.files(seacar_data_location, full.names = TRUE)
-old_files <- list.files((paste0(seacar_data_location,"archive/")), full.names = TRUE)
+old_files <- list.files((paste0(seacar_data_location,"archive/2023-Oct-11")), full.names = TRUE)
 
 wq_disc_files <- str_subset(str_subset(files, "Combined_WQ_WC_NUT_"), "_cont_", negate = TRUE)
 wq_disc_files_old <- str_subset(str_subset(old_files, "Combined_WQ_WC_NUT_"), "_cont_", negate = TRUE)
 
 # Determine whether to collect & include VQ data in reports (too many pages)
 collect_vq_data <- FALSE
+
+# Test variable to delete a column to check column comparison functionality
+test_columns <- FALSE
 
 ## Variables set to FALSE, script will change to TRUE if conditions met
 columns_differ <- FALSE
@@ -48,9 +51,6 @@ for(file in wq_disc_files){
   
   # pattern to grab relevant "old" file
   pattern <- str_split(str_split(new_file_short, "NUT_")[[1]], "-")[[2]][1]
-  # if(pattern=="Dissolved_Oxygen"){
-  #   pattern <- paste0(pattern,"-")
-  # }
   pattern <- ifelse(pattern=="Dissolved_Oxygen", paste0(pattern,"-"), pattern)
   
   # Grab "old" export file, file_short
@@ -90,9 +90,6 @@ for(file in wq_disc_files){
   
   program_result_table <- bind_rows(program_result_table, rbind(new_programs, old_programs))
   
-  # compare <- arsenal::comparedf(data_old, data_new)
-  # data_directory[[param]][["comparison"]] <- compare
-  
   ##### Comparison checks #### ----
   ## The following are intended to check for inconsistencies between data exports
   
@@ -100,12 +97,16 @@ for(file in wq_disc_files){
   ## If they have different number of columns, list them in table below
   if(length(names(data_old))!=length(names(data_new))){
     print(paste0("There is a difference in the number of columns for ", new_file_short, " vs. ", old_file_short))
-    column_compare <- data.table(
-      "oldColumns" = sort(names(data_old)),
-      "oldColumnsType" = sapply(data_old, class),
-      "newColumns" = sort(names(data_new)),
-      "newColumnsType" = sapply(data_new, class)
+    oldColumns <- data.table(
+      "Column" = sort(names(data_old)),
+      "ColumnType" = sapply(data_old, class)
     )
+    newColumns <- data.table(
+      "Column" = sort(names(data_new)),
+      "ColumnType" = sapply(data_new, class)
+    )
+    data_directory[["column_compare"]][[param]][['oldColumns']] <- oldColumns
+    data_directory[["column_compare"]][[param]][['newColumns']] <- newColumns
     data_directory[["column_compare"]][[param]] <- column_compare
   }
   
@@ -133,8 +134,18 @@ for(file in wq_disc_files){
     diff_df <- diff_df %>%
       mutate(color_code = ifelse(export=="old", "red", "green"))
     
-    data_directory[["program_compare"]][[param]][["old_programs"]] <- old_programs
-    data_directory[["program_compare"]][[param]][["new_programs"]] <- new_programs
+    colorize_program <- function(pid, color_code) {colorize(pid, color_code)}
+    
+    new_programs_color <- unlist(lapply(new_programs, function(pid) {
+      ifelse(pid %in% diff_df$pid, colorize_program(pid, diff_df$color_code), pid)
+    }))
+    
+    old_programs_color <- unlist(lapply(old_programs, function(pid) {
+      ifelse(pid %in% diff_df$pid, colorize_program(pid, diff_df$color_code), pid)
+    }))
+    
+    data_directory[["program_compare"]][[param]][["old_programs"]] <- old_programs_color
+    data_directory[["program_compare"]][[param]][["new_programs"]] <- new_programs_color
     data_directory[["program_compare"]][[param]][["diff_df"]] <- diff_df
     
   }
@@ -168,19 +179,12 @@ for(file in wq_disc_files){
     
     # append individual tables into data_directory
     data_directory[["vq_table"]][[param]] <- vq_table
-    data_directory[["vq_program_table"]][[param]] <- vq_program_table 
-    
-    
+    data_directory[["vq_program_table"]][[param]] <- vq_program_table
   }
   
 }
 
-# program_result_table$Present <- 1
-# programs_wide <- program_result_table %>%
-#   pivot_wider(names_from = ProgramID, values_from = Present, values_fill = list(Present = 0)) %>%
-#   arrange(ParameterName)
-
-file_out <- "Combined_WQ_WC_NUT_Discrete"
+file_out <- paste0(old_file_shorter, "-vs-", new_file_shorter,"_Discrete_Report")
 
 # Render reports
 rmarkdown::render(input = "comparison/ReportTemplate.Rmd",
