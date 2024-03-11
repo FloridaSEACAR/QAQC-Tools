@@ -1,6 +1,6 @@
 ---
-title: "Discrete QAQC Report"
-author: "TILER - Tediously Interpreting Layers of Extraneous Reporting"
+title: "Discrete Species QAQC Report"
+author: "(SIDBGD) SEACAR Internal Divison for the Betterment and Goodification of Data"
 date: "`r Sys.Date()`"
 output: 
   pdf_document:
@@ -24,7 +24,7 @@ cat("The following files are included in the analysis:")
 cat("  \n")
 cat("  \n")
 
-habitats <- names(data_directory[["new_file_name"]])
+habitats <- names(data_directory)
 
 for(h in habitats){
   new_file_name <- data_directory[["new_file_name"]][[h]]

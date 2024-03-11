@@ -22,8 +22,10 @@ source("seacar_data_location.R")
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive
 
+old_file_date <- "2024-Jan-10"
+
 new_files <- list.files(seacar_data_location, full.names = TRUE)
-old_files <- list.files((paste0(seacar_data_location,"archive/2023-Oct-11")), full.names = TRUE)
+old_files <- list.files((paste0(seacar_data_location,"archive/",old_file_date)), full.names = TRUE)
 
 new_hab_files <- str_subset(new_files, "All_")
 old_hab_files <- str_subset(old_files, "All_")
@@ -152,9 +154,9 @@ for(i in 1:length(new_hab_files)){
       ifelse(pid %in% diff_df$pid, colorize_program(pid, diff_df$color_code), pid)
     }))
     
-    data_directory[["program_compare"]][[param]][["old_programs"]] <- old_programs_color
-    data_directory[["program_compare"]][[param]][["new_programs"]] <- new_programs_color
-    data_directory[["program_compare"]][[param]][["diff_df"]] <- diff_df
+    data_directory[["program_compare"]][[habitat]][["old_programs"]] <- old_programs_color
+    data_directory[["program_compare"]][[habitat]][["new_programs"]] <- new_programs_color
+    data_directory[["program_compare"]][[habitat]][["diff_df"]] <- diff_df
     
   }
   # Species Differences ----

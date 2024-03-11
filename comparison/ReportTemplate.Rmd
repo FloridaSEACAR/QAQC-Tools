@@ -1,6 +1,6 @@
 ---
-title: "Discrete QAQC Report"
-author: "TILER - Tediously Interpreting Layers of Extraneous Reporting"
+title: "Export Comparison QAQC Report"
+author: "(SIDBGD) SEACAR Internal Divison for the Betterment and Goodification of Data"
 date: "`r Sys.Date()`"
 output: 
   pdf_document:
@@ -14,170 +14,27 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 
 ```
 
-# Discrete QAQC Report
 
-This document is intended to provide an overview of newly-exported Combined Tables.  
-
-The following *Combined_WQ_WC_NUT_* files are included in the analysis:
-
-```{r file_name_display, results='asis', eval=FALSE}
-
-params <- names(data_directory)
-
-for(p in params){
-  file_name <- data_directory[[p]]["file_name"]
-  cat(paste0("* *",file_name,"*  \n"))
-}
-
-```
-
-# Comparison of Current and Previous Exports - Overview
-
-```{r comparison, results='asis'}
+```{r functions}
 # Function to return report-ready datatable format
 make_kable <- function(data_table, table_caption){
   return(
-    kable(data_table,
-          format="simple",
-          caption=table_caption,
-          booktabs=T) %>%
+    kbl(data_table,
+        format="latex",
+        caption=table_caption,
+        escape=F,
+        digits=2,
+        vline = "",
+        linesep = "",
+        longtable = T,
+        booktabs = T) %>%
       kable_styling(latex_options = c("scale_down","HOLD_position"),
-                    position = "center",
-                    font_size = 10)
+                    position = "center") %>%
+      row_spec(0, italic = TRUE)
     )
 }
 
-if(habitat=="Discrete"){
-  data_overview <- old_new_data
-} else if(habitat %in% c("CORAL","CW","NEKTON","Oyster","SAV")){
-  data_overview <- habitat_data
-}
-
-old_new_table <- data_overview %>%
-  dplyr::rowwise() %>%
-  dplyr::mutate(cell_color = ifelse(difference<0, "red", ifelse(difference>10000, "orange", "black"))) %>%
-  dplyr::mutate(difference = cell_spec(difference, color=cell_color)) %>%
-  select(-cell_color)
-
-print(make_kable(old_new_table, "Comparison of New vs. Old data exports"))
-cat("  \n")
-
-```
-
-
-
-
-```{r program_overview_table, results='asis', eval=FALSE}
-cat("# Program Overview Table")
-cat("  \n")
-
-# programs_wide2 <- programs_wide %>%
-#   mutate_all(funs(str_replace(., "1", "\\checkmark")))
-
-programs_wide_kable <- kable(programs_wide,
-                             format="latex",
-                             caption="ProgramID Overview",
-                             booktabs=T) %>%
-  kable_styling(latex_options = c("scale_down","HOLD_position"),
-                position = "center",
-                font_size = 10)
-
-print(programs_wide_kable)
-
-cat("  \n")
-
-```
-
-
-```{r program_comparison, results='asis', echo=FALSE, eval=TRUE}
-
-colorize <- function(x, color) {sprintf("\\textcolor{%s}{%s}", color, x)}
-
-if(length(names(data_directory[['program_compare']]))>0){
-  programs_differ <- TRUE
-}
-if(length(names(data_directory[['column_compare']]))>0){
-  columns_differ <- TRUE
-}
-
-if(programs_differ == TRUE){
-  cat("\\newpage")
-  cat("  \n")
-  cat("# Program Differences")
-  cat("  \n")
-  cat(paste0(colorize("Red", "red")," ProgramIDs are Programs in the Old Exports but not in the New Exports  \n"))
-  cat(paste0(colorize("Green", "green")," ProgramIDs are Programs in the New Exports but not in the Old Exports  \n"))
-  cat("There is a difference in Programs between exports for the following parameters:")
-  cat("    \n")
-  cat("  \n")
-  for(par in names(data_directory[['program_compare']])){
-    cat("  \n")
-    cat(glue("## {par}"))
-    cat("  \n")
-    cat(paste0("Programs in old export: (n=", length(data_directory[['program_compare']][[par]]$old_programs),")"))
-    cat("  \n")
-    cat(data_directory[['program_compare']][[par]]$old_programs, sep=", ")
-    cat("  \n")
-    cat(paste0("Programs in new export: (n=", length(data_directory[['program_compare']][[par]]$new_programs),")"))
-    cat("  \n")
-    cat(data_directory[['program_compare']][[par]]$new_programs, sep=", ")
-    cat("  \n")
-    cat("  \n")
-    # cat("Differences: ")
-    # diff_df <- data_directory[['program_compare']][[par]]$diff_df
-    # for(i in 1:nrow(diff_df)){
-    #   cat(colorize(diff_df[i]$pid, diff_df[i]$color_code))
-    #   if(!i==nrow(diff_df)){cat(", ")}
-    # }
-    cat("  \n")
-  }
-  cat("  \n")
-}
-
-if(columns_differ == TRUE){
-  cat("\\newpage")
-  cat("  \n")
-  cat("# Column Differences")
-  cat("  \n")
-  cat("There is a difference in Columns between exports for the following parameters:")
-  cat("  \n")
-  for(par in names(data_directory[['column_compare']])){
-    cat("  \n")
-    cat(glue("## {par}"))
-    cat("  \n")
-    cat("Columns in old export: ")
-    cat("  \n")
-    print(make_kable(data_directory[['column_compare']][[par]][["oldColumns"]], "Old Columns"))
-    cat("  \n")
-    cat("Columns in new export: ")
-    cat("  \n")
-    print(make_kable(data_directory[['column_compare']][[par]][["newColumns"]], "New Columns"))
-    cat("  \n")
-  }
-  cat("  \n")
-}
-
-```
-
-
-```{r detailed_comparison, results='asis', echo=FALSE, eval=FALSE}
-cat("\\newpage")
-cat("# Detailed Comparison")
-cat("  \n")
-
-for(p in names(data_directory)){
-  cat("  \n")
-  cat(glue("## {p}"))
-  cat("  \n")
-  print(summary(data_directory[[p]][["comparison"]]))
-  cat("  \n")
-}
-
-```
-
-
-```{r value_qualifiers, results='asis', eval=TRUE}
-## Plotting function
+## Plotting function for value qualifiers
 plot_vq_barplot <- function(vq_source){
   if(vq_source=="STORET_WIN"){
     vq_program_table_subset <- vq_program_table[ValueQualifierSource==vq_source, ]
@@ -206,54 +63,250 @@ plot_vq_barplot <- function(vq_source){
   }
 }
 
-if(collect_vq_data==TRUE){
-  cat("\\newpage")
-  cat("# Analysis of Value Qualifiers")
+```
+
+This document is intended to provide an overview of newly-exported Combined Tables.  
+
+```{r file name overview tables, results='asis', eval=TRUE}
+
+habitats <- names(data_directory)
+
+for(i in 1:length(habitats)){
+  
+  h <- habitats[i]
+  
+  if(!i==1){
+    cat("\\newpage")
+  }
+  
+  cat(glue("# {h}  \n"))
   cat("  \n")
-  for(p in names(data_directory[["vq_table"]])){
-    if(nrow(data_directory[["vq_table"]][[p]])){
-      cat(glue("## {p}"))
+  
+  #######################
+  ## FILE NAME DISPLAY ##
+  #######################
+  
+  if(file_name_display==TRUE){
+    cat("## Filenames")
+    cat("  \n")
+    cat("The following files are included in the analysis:")
+    cat("  \n")
+    params <- names(data_directory[[h]][["new_file_name"]])
+    
+    column_display <- data.table(
+      "parameter" = params,
+      "oldFile" = data_directory[[h]][["old_file_name"]],
+      "newFile" = data_directory[[h]][["new_file_name"]])
+    
+    print(make_kable(column_display, paste0(h," files used in analysis")))
+    cat("  \n")
+  }
+  
+  #####################
+  ## OVERVIEW TABLES ##
+  #####################
+  
+  cat("## Overview")
+  cat("  \n")
+  
+  comparison_table <- data_directory[[h]][["comparison_table"]]
+  
+  # highlight difference column for discrete/species (>10,000 values orange, negative values red)
+  if(h %in% c("Discrete","Species","Continuous")){
+    comparison_table <- comparison_table %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
+      dplyr::mutate(difference = cell_spec(difference, color=cell_color)) %>%
+      select(-cell_color)
+  }
+  
+  # highlight pctChange column for continuous (>5% orange, negative values red)
+  # if(h=="Continuous"){
+  #   comparison_table <- comparison_table %>%
+  #     dplyr::rowwise() %>%
+  #     dplyr::mutate(cell_color = ifelse(pctChange<0, "red", ifelse(pctChange > 5, "orange", "black"))) %>%
+  #     dplyr::mutate(pctChange = cell_spec(pctChange, color=cell_color)) %>%
+  #     select(-cell_color)
+  # }
+  
+  print(make_kable(comparison_table, paste0("Comparison of New vs. Old data exports - (",h,")")))
+  cat("  \n")
+  
+  ########################
+  ## PROGRAM COMPARISON ##
+  ########################
+  
+  if(length(names(data_directory[[h]][['program_compare']]))>0){
+    cat("\\newpage")
+    cat("  \n")
+    cat("## Program Differences")
+    cat("  \n")
+    cat(paste0(colorize("Red", "red")," ProgramIDs are Programs in the Old Exports but not in the New Exports  \n"))
+    cat(paste0(colorize("Green", "green")," ProgramIDs are Programs in the New Exports but not in the Old Exports  \n"))
+    cat("    \n")
+    cat("There is a difference in Programs between exports for the following parameters:")
+    cat("    \n")
+    cat("  \n")
+    for(par in names(data_directory[[h]][['program_compare']])){
+      
+      old_programs <- data_directory[[h]][['program_compare']][[par]]$old_programs
+      new_programs <- data_directory[[h]][['program_compare']][[par]]$new_programs
+      
       cat("  \n")
-      vq_table <- kable(data_directory[["vq_table"]][[p]],
-                        format="simple",
-                        caption="Value Qualifier Overview") %>%
-        kable_styling(latex_options = "scale_down",
-                      position = "center",
-                      font_size = 10)
-      
-      print(vq_table)
+      cat(glue("### {par}"))
       cat("  \n")
-      
-      vq_program_table <- setDT(data_directory[["vq_program_table"]][[p]] %>% ungroup())
-      vq_program_kable <- kable(vq_program_table %>%
-                                  select(-ProgramName) %>%
-                                  pivot_wider(names_from = ValueQualifier, values_from = n_vq_data, values_fill = 0) %>%
-                                  arrange(ProgramID),
-                                format="latex",
-                                caption="Value Qualifier Overview by Program",
-                                booktabs=T) %>%
-        kable_styling(latex_options = c("scale_down","HOLD_position"),
-                      position = "center")
-      
-      print(vq_program_kable)
-      
+      cat(paste0("Programs in old export: (n=", length(old_programs),")"))
       cat("  \n")
-      cat("**STORET_WIN**  \n")
-      plot_vq_barplot("STORET_WIN")
-      
+      cat(old_programs, sep=", ")
       cat("  \n")
-      cat("**SWMP**  \n")
-      plot_vq_barplot("SWMP")
-      
+      cat(paste0("Programs in new export: (n=", length(new_programs),")"))
       cat("  \n")
-      cat("Problematic Programs:  \n")
-      for(p_id in unique(vq_program_table$ProgramID)){
-        p_name <- vq_program_table[ProgramID==p_id, unique(ProgramName)]
+      cat(new_programs, sep=", ")
+      cat("  \n")
+      cat("  \n")
+      # cat("Differences: ")
+      # diff_df <- data_directory[['program_compare']][[par]]$diff_df
+      # for(i in 1:nrow(diff_df)){
+      #   cat(colorize(diff_df[i]$pid, diff_df[i]$color_code))
+      #   if(!i==nrow(diff_df)){cat(", ")}
+      # }
+      cat("  \n")
+    }
+    cat("  \n")
+  }
+  
+  ####################
+  ## PROGRAM COUNTS ##
+  ####################
+  
+  if(nrow(data_directory[[h]][["program_count_table"]])>0){
+    
+    cat("\\newpage")
+    cat("  \n")
+    cat("## Differences in Program data between exports")
+    cat("  \n")
+    
+    program_count_table <- data_directory[[h]][["program_count_table"]] %>%
+      rowwise() %>%
+      mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
+      mutate(difference = cell_spec(difference, color=cell_color)) %>%
+      select(-cell_color)
+    
+    # remove duplicate entries
+    program_count_table <- distinct(program_count_table)
+    
+    if(h=="Species"){
+      for(hab in unique(program_count_table$habitat)){
+        program_count_table_hab <- program_count_table %>% filter(habitat==hab)
         cat("  \n")
-        cat(paste0("* **",p_id,"** - *",p_name,"*"))
+        cat(glue("### {hab}"))
+        cat("  \n")
+        
+        for(p in unique(program_count_table_hab$ParameterName)){
+          print(make_kable(
+            program_count_table_hab %>% filter(ParameterName==p) %>% 
+              select(-habitat) %>%
+              arrange(ProgramID),
+            paste0("Number of data entries by program -\n", p)))
+        }
+      }
+    } else {
+      for(p in unique(program_count_table$parameter)){
+        cat("  \n")
+        cat(glue("### {p}"))
+        cat("  \n")
+        print(make_kable(
+          program_count_table %>% filter(parameter==p) %>% 
+            select(-parameter) %>%
+            arrange(ProgramID),
+          paste0("Number of data entries by program -\n", p)))
+      }      
+    }
+  }
+  
+  #######################
+  ## COLUMN COMPARISON ##
+  #######################
+  
+  if(length(names(data_directory[[h]][['column_compare']]))>0){
+    cat("\\newpage")
+    cat("  \n")
+    cat("## Column Differences")
+    cat("  \n")
+    cat("There is a difference in Columns between exports for the following parameters:")
+    cat("  \n")
+    for(par in names(data_directory[[h]][['column_compare']])){
+      cat("  \n")
+      cat(glue("### {par}"))
+      cat("  \n")
+      cat("Columns in old export: ")
+      cat("  \n")
+      print(make_kable(data_directory[[h]][['column_compare']][[par]][["oldColumns"]], "Old Columns"))
+      cat("  \n")
+      cat("Columns in new export: ")
+      cat("  \n")
+      print(make_kable(data_directory[[h]][['column_compare']][[par]][["newColumns"]], "New Columns"))
+      cat("  \n")
+    }
+    cat("  \n")
+  }
+  
+  ######################
+  ## VALUE QUALIFIERS ##
+  ######################
+  
+  if(h=="Discrete" & collect_vq_data==TRUE){
+    cat("\\newpage")
+    cat("## Analysis of Value Qualifiers")
+    cat("  \n")
+    
+    for(p in names(data_directory[[h]][["vq_table"]])){
+      if(nrow(data_directory[[h]][["vq_table"]][[p]])){
+        cat(glue("### {p}"))
+        cat("  \n")
+        vq_table <- kable(data_directory[[h]][["vq_table"]][[p]],
+                          format="simple",
+                          caption="Value Qualifier Overview") %>%
+          kable_styling(latex_options = "scale_down",
+                        position = "center",
+                        font_size = 10)
+        
+        print(vq_table)
+        cat("  \n")
+        
+        vq_program_table <- setDT(data_directory[[h]][["vq_program_table"]][[p]] %>% ungroup())
+        vq_program_kable <- kable(vq_program_table %>%
+                                    select(-ProgramName) %>%
+                                    pivot_wider(names_from = ValueQualifier, values_from = n_vq_data, values_fill = 0) %>%
+                                    arrange(ProgramID),
+                                  format="latex",
+                                  caption="Value Qualifier Overview by Program",
+                                  booktabs=T) %>%
+          kable_styling(latex_options = c("scale_down","HOLD_position"),
+                        position = "center")
+        
+        print(vq_program_kable)
+        
+        cat("  \n")
+        cat("**STORET_WIN**  \n")
+        plot_vq_barplot("STORET_WIN")
+        
+        cat("  \n")
+        cat("**SWMP**  \n")
+        plot_vq_barplot("SWMP")
+        
+        cat("  \n")
+        cat("Problematic Programs:  \n")
+        
+        for(p_id in unique(vq_program_table$ProgramID)){
+          p_name <- vq_program_table[ProgramID==p_id, unique(ProgramName)]
+          cat("  \n")
+          cat(paste0("* **",p_id,"** - *",p_name,"*"))
+          cat("  \n")
+        }
+        
         cat("  \n")
       }
-      cat("  \n")
     }
   }
 }
