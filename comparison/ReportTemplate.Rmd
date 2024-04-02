@@ -112,7 +112,7 @@ for(i in 1:length(habitats)){
   comparison_table <- data_directory[[h]][["comparison_table"]]
   
   # highlight difference column for discrete/species (>10,000 values orange, negative values red)
-  if(h %in% c("Discrete","Species","Continuous")){
+  if(h %in% c("Discrete WQ","Species","Continuous WQ")){
     comparison_table <- comparison_table %>%
       dplyr::rowwise() %>%
       dplyr::mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
@@ -191,6 +191,8 @@ for(i in 1:length(habitats)){
       mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
       mutate(difference = cell_spec(difference, color=cell_color)) %>%
       select(-cell_color)
+    
+    names(program_count_table) <- gsub("_", " ", names(program_count_table))
     
     # remove duplicate entries
     program_count_table <- distinct(program_count_table)
@@ -309,6 +311,90 @@ for(i in 1:length(habitats)){
       }
     }
   }
+}
+
+```
+
+
+```{r qaqc flag check, results='asis'}
+
+check_flag <- function(h){
+  data_combined_subset <- data.table()
+  
+  if(!h=="Species"){
+    for(i in names(data_directory[[h]][["quantile"]])){
+      data_combined_subset <- rbind(data_combined_subset, plyr::rbind.fill(data_directory[[h]][["quantile"]][[i]]), fill=TRUE)
+    }
+    
+    # Compute statistics grouped by ParameterName
+    flag_table <- data_combined_subset[,
+                                       .(n_high = sum(q_subset == "high"),
+                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, "17Q")),
+                                         n_low = sum(q_subset == "low"),
+                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, "16Q"))),
+                                       by = ParameterName]
+    
+  } else {
+    for(type in names(data_directory[[h]][["quantile"]])){
+      for(i in names(data_directory[[h]][["quantile"]][[type]])){
+        data2 <- plyr::rbind.fill(data_directory[[h]][["quantile"]][[type]][[i]])
+        data2$habitat <- type
+        
+        data_combined_subset <- rbind(data_combined_subset, data2, fill=TRUE)
+      }
+    }
+    
+    # Compute statistics grouped by ParameterName
+    flag_table <- data_combined_subset[, 
+                                       .(n_high = sum(q_subset == "high"),
+                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, "17Q")),
+                                         n_low = sum(q_subset == "low"),
+                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, "16Q"))), 
+                                       by = list(ParameterName, habitat)]
+  }
+  
+  # add signifier to any entry that doesn't have correct flag
+  # Color coding cells
+  flag_table <- flag_table %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(cell_color_low = ifelse(n_low == n_low_flagged, "black", "red"),
+                  cell_color_high = ifelse(n_high == n_high_flagged, "black", "red")) %>%
+    dplyr::mutate(n_low = cell_spec(n_low, color = cell_color_low),
+                  n_low_flagged = cell_spec(n_low_flagged, color = cell_color_low),
+                  n_high = cell_spec(n_high, color = cell_color_high),
+                  n_high_flagged = cell_spec(n_high_flagged, color = cell_color_high)) %>%
+    select(-c(cell_color_high, cell_color_low))
+  
+  names(flag_table) <- gsub("_", " ", names(flag_table))
+  
+  flag_display_table <- kable(flag_table,
+                              format="latex",
+                              digits = 2,
+                              escape = F,
+                              booktabs=T) %>%
+    kable_styling(latex_options=c("scale_down", "HOLD_position"),
+                  position = "center")
+  
+  print(flag_display_table)
+}
+
+for(i in 1:length(habitats)){
+  
+  h <- habitats[i]
+  
+  if(!i==1){
+    cat("\\newpage")
+  } else {
+    cat("# QAQC Flag Check")
+    cat("  \n")
+  }
+  
+  cat("  \n")
+  cat(glue("## {h}"))
+  cat("  \n")
+  
+  check_flag(h)
+  
 }
 
 ```

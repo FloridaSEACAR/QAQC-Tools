@@ -11,6 +11,7 @@ library(viridis)
 library(extrafont)
 library(knitr)
 library(kableExtra)
+library(readxl)
 
 # Load in SEACAR combined tables
 source("seacar_data_location.R")
@@ -22,7 +23,7 @@ source("seacar_data_location.R")
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2024-Jan-10"
+old_file_date <- "2024-Feb-23"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
 old_files <- list.files((paste0(seacar_data_location,"archive/",old_file_date)), full.names = TRUE)
@@ -136,7 +137,7 @@ compare_programs <- function(data_old, data_new, old_file_short, new_file_short,
 }
 
 # Provide counts of data by program for each parameter
-program_counts <- function(data_old, data_new, habitat, param){
+program_counts <- function(data_old, data_new, habitat, param, quadsize="None"){
 
   if(!habitat=="Species"){
     program_count_table <- merge(
@@ -144,6 +145,11 @@ program_counts <- function(data_old, data_new, habitat, param){
       data_new %>% group_by(ProgramID) %>% summarise(nNew = n())) %>%
       mutate(difference = nNew - nOld)
     program_count_table$parameter <- param
+  } else if(quadsize=="Yes"){
+    program_count_table <- merge(
+      data_old %>% group_by(ProgramID, ParameterName, QuadSize_m2) %>% summarise(nOld = n()),
+      data_new %>% group_by(ProgramID, ParameterName, QuadSize_m2) %>% summarise(nNew = n())) %>%
+      mutate(difference = nNew - nOld)
   } else {
     program_count_table <- merge(
       data_old %>% group_by(ProgramID, ParameterName) %>% summarise(nOld = n()),
@@ -154,13 +160,76 @@ program_counts <- function(data_old, data_new, habitat, param){
   return(program_count_table)
 }
 
+# Run quantiles and grab quantile data
+grab_quantiles <- function(df, habitat, param, quadsize="None", indicator="None"){
+  
+  if(quadsize=="None"){
+    if(!indicator=="None"){
+      if(indicator=="Community Composition"){
+        sg1_include <- c("Corallimorpharians", "Milleporans", "Octocoral", "Others", "Porifera", "Scleractinian", "NULL")
+      }
+      if(indicator=="Grazers and Reef Dependent Species"){
+        sg1_include <- c("Grazers and reef dependent species","Reef Fish")
+      }
+      
+      data <- df[ParameterName==param & SpeciesGroup1 %in% sg1_include, ]
+      
+    } else {
+      data <- df[ParameterName==param, ]
+    }
+    
+    # Use ThresholdID for Total Nitrogen (use All, not Calculated)
+    if(param=="Total Nitrogen"){
+      quant_low_value <- db_thresholds[ThresholdID==31, LowQuantile]
+      quant_high_value <- db_thresholds[ThresholdID==31, HighQuantile]
+    } else if(!indicator=="None"){
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & IndicatorName==indicator, LowQuantile]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & IndicatorName==indicator, HighQuantile]
+    } else {
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, LowQuantile]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, HighQuantile]
+    }
+  } else {
+    if(quadsize=="NA"){
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & is.na(QuadSize_m2), LowQuantile]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & is.na(QuadSize_m2), HighQuantile]
+      data <- df[ParameterName==param & is.na(QuadSize_m2), ]
+    } else {
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & QuadSize_m2==quadsize, LowQuantile]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & QuadSize_m2==quadsize, HighQuantile]
+      data <- df[ParameterName==param & QuadSize_m2==quadsize, ]
+    }
+  }
+  
+  subset_low <- data[ResultValue < quant_low_value, ]
+  subset_low$q_subset <- "low"
+  
+  subset_high <- data[ResultValue > quant_high_value, ]
+  subset_high$q_subset <- "high"
+  
+  combined_subset <- bind_rows(subset_low, subset_high)
+}
+
+## Import database thresholds
+## Latest file available at:
+## https://github.com/FloridaSEACAR/IndicatorQuantiles/blob/main/output/ScriptResults/Database_Thresholds.xlsx
+
+db_thresholds <- read_xlsx("comparison/data/Database_Thresholds.xlsx", skip=2)
+
+db_thresholds <- db_thresholds %>% 
+  filter(!IndicatorName=="Acreage") %>%
+  select(ThresholdID, ParameterID, ParameterName, Habitat, CombinedTable, 
+         IndicatorID, IndicatorName, ExpectedValues, LowThreshold, HighThreshold, 
+         LowQuantile, HighQuantile, QuadSize_m2)
+setDT(db_thresholds)
+
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
 # habitats <- c("Species")
 
 # Begin Discrete processing
 if("Discrete" %in% habitats){
-  habitat <- "Discrete"
+  habitat <- "Discrete WQ"
   comparison_table <- data.table()
   program_count_table <- data.table()
   # wq_disc_files[c(2,3,16)]
@@ -183,9 +252,11 @@ if("Discrete" %in% habitats){
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(file, sep='|', na.strings = "NULL")
+    data_new <- data_new[Include==1 & MADup==1, ]
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
+    data_old <- data_old[Include==1 & MADup==1, ]
     
     # Full ParameterName for a given file
     param <- data_new[, unique(ParameterName)]
@@ -222,6 +293,9 @@ if("Discrete" %in% habitats){
     ### Provide counts of data by program by parameter
     program_count_table <- bind_rows(program_count_table, program_counts(
       data_old, data_new, habitat, param))
+    
+    ### Grab quantile data
+    data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new, habitat, param)
     
     ### The following collects statistics about ValueQualifiers and includes them in the report
     if(collect_vq_data==TRUE){
@@ -262,7 +336,7 @@ if("Discrete" %in% habitats){
 
 # Begin Continuous processing
 if("Continuous" %in% habitats){
-  habitat <- "Continuous"
+  habitat <- "Continuous WQ"
   comparison_table <- data.table()
   program_count_table <- data.table()
   
@@ -288,9 +362,11 @@ if("Continuous" %in% habitats){
         # Read in data frame for each combined data export
         print(paste0("Reading in: ", new_file_short))
         data_new <- fread(new_file, sep='|', na.strings = "NULL")
+        data_new <- data_new[Include==1 & MADup==1, ]
         # Read in old data
         print(paste0("Reading in: ", old_file_short))
         data_old <- fread(old_file, sep='|', na.strings = "NULL")
+        data_old <- data_old[Include==1 & MADup==1, ]
         
         # Full ParameterName for a given file
         param <- data_new[, unique(ParameterName)]
@@ -330,6 +406,9 @@ if("Continuous" %in% habitats){
         program_count_table <- bind_rows(program_count_table, program_counts(
           data_old, data_new, habitat, param))
         
+        ### Grab quantile data
+        data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new, habitat, param)
+        
       }
     }
   }
@@ -354,7 +433,9 @@ if("Species" %in% habitats){
     # pattern to grab relevant "old" file
     pattern <- str_split(str_split(new_file_short, "All_")[[1]][2], "_Parameters")[[1]][1]
     # pattern is habitat name
-    habitat <- pattern
+    
+    # Match habitat name with format of db_thresholds, i.e. CORAL to Coral
+    habitat <- ifelse(pattern %in% c("CORAL","NEKTON"), str_to_title(pattern), pattern)
     
     # Grab "old" export file, file_short
     old_file <- str_subset(old_hab_files, pattern)
@@ -368,9 +449,11 @@ if("Species" %in% habitats){
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(file, sep='|', na.strings = "NULL")
+    data_new <- data_new[Include==1 & MADup==1, ]
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
+    data_old <- data_old[Include==1 & MADup==1, ]
     
     data_table <- data.table(
       "habitat" = habitat,
@@ -397,12 +480,37 @@ if("Species" %in% habitats){
     data_directory[["Species"]][["program_compare"]][[habitat]] <- compare_programs(
       data_old, data_new, old_file_short, new_file_short, habitat, param)
     
+    ### Provide counts of data by program by parameter
+    
+    qsize <- ifelse(habitat=="Oyster", "Yes", "None")
+    
+    p_count_df <- program_counts(data_old, data_new, "Species", param, quadsize=qsize)
+    p_count_df$habitat <- habitat
+    program_count_table <- bind_rows(program_count_table, p_count_df)
+    
     params <- unique(data_new$ParameterName)
     for(param in params){
-      ### Provide counts of data by program by parameter
-      p_count_df <- program_counts(data_old, data_new, "Species", param)
-      p_count_df$habitat <- habitat
-      program_count_table <- bind_rows(program_count_table, p_count_df)
+      
+      # Split by quad size
+      if(habitat=="Oyster" & param %in% c("Shell Height","Number of Oysters Counted - Total",
+                                          "Number of Oysters Counted - Live","Number of Oysters Counted - Dead")){
+        
+        for(q in unique(data_new$QuadSize_m2)){
+          param_q <- paste0(param, "(",q,")")
+          q <- ifelse(is.na(q), "NA", q)
+          ### Grab quantile data
+          data_directory[["Species"]][["quantile"]][[habitat]][[param_q]] <- grab_quantiles(data_new, habitat, param, quadsize=q, indicator="None")
+        }
+      } else if(habitat=="Coral" & param=="Count"){
+        for(i in c("Community Composition","Grazers and Reef Dependent Species")){
+          param_i <- paste0(param, "(",i,")")
+          data_directory[["Species"]][["quantile"]][[habitat]][[param_i]] <- grab_quantiles(data_new, habitat, param, quadsize="None", indicator=i)
+        }
+      } else {
+        ### Grab quantile data
+        data_directory[["Species"]][["quantile"]][[habitat]][[param]] <- grab_quantiles(data_new, habitat, param, quadsize="None", indicator="None")
+      }
+
     }
     
   }
