@@ -17,7 +17,7 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 
 ```{r functions}
 # Function to return report-ready datatable format
-make_kable <- function(data_table, table_caption){
+make_kable <- function(data_table, table_caption, format="latex"){
   return(
     kbl(data_table,
         format="latex",
@@ -318,26 +318,35 @@ for(i in 1:length(habitats)){
 
 ```{r qaqc flag check, results='asis'}
 
-check_flag <- function(h){
+check_flag <- function(h, qtype="quantile"){
   data_combined_subset <- data.table()
   
+  if(qtype=="quantile"){
+    high_flag_code <- "17Q"
+    low_flag_code <- "16Q"
+  } else if(qtype=="threshold"){
+    high_flag_code <- "2Q|3Q"
+    low_flag_code <- "4Q|5Q"
+  }
+  
   if(!h=="Species"){
-    for(i in names(data_directory[[h]][["quantile"]])){
-      data_combined_subset <- rbind(data_combined_subset, plyr::rbind.fill(data_directory[[h]][["quantile"]][[i]]), fill=TRUE)
+    for(i in names(data_directory[[h]][[qtype]])){
+      data_combined_subset <- rbind(data_combined_subset, plyr::rbind.fill(data_directory[[h]][[qtype]][[i]]), fill=TRUE)
     }
     
     # Compute statistics grouped by ParameterName
     flag_table <- data_combined_subset[,
                                        .(n_high = sum(q_subset == "high"),
-                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, "17Q")),
+                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, high_flag_code)),
                                          n_low = sum(q_subset == "low"),
-                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, "16Q"))),
+                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, low_flag_code)),
+                                         n_included = sum(Include==1)),
                                        by = ParameterName]
     
   } else {
-    for(type in names(data_directory[[h]][["quantile"]])){
-      for(i in names(data_directory[[h]][["quantile"]][[type]])){
-        data2 <- plyr::rbind.fill(data_directory[[h]][["quantile"]][[type]][[i]])
+    for(type in names(data_directory[[h]][[qtype]])){
+      for(i in names(data_directory[[h]][[qtype]][[type]])){
+        data2 <- plyr::rbind.fill(data_directory[[h]][[qtype]][[type]][[i]])
         data2$habitat <- type
         
         data_combined_subset <- rbind(data_combined_subset, data2, fill=TRUE)
@@ -347,9 +356,9 @@ check_flag <- function(h){
     # Compute statistics grouped by ParameterName
     flag_table <- data_combined_subset[, 
                                        .(n_high = sum(q_subset == "high"),
-                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, "17Q")),
+                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, high_flag_code)),
                                          n_low = sum(q_subset == "low"),
-                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, "16Q"))), 
+                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, low_flag_code))), 
                                        by = list(ParameterName, habitat)]
   }
   
@@ -365,6 +374,9 @@ check_flag <- function(h){
                   n_high_flagged = cell_spec(n_high_flagged, color = cell_color_high)) %>%
     select(-c(cell_color_high, cell_color_low))
   
+  # Provide "Include" column for threshold tables only
+  if(!qtype=="threshold" & !h=="Species"){flag_table <- flag_table %>% select(-n_included)}
+  
   names(flag_table) <- gsub("_", " ", names(flag_table))
   
   flag_display_table <- kable(flag_table,
@@ -375,7 +387,14 @@ check_flag <- function(h){
     kable_styling(latex_options=c("scale_down", "HOLD_position"),
                   position = "center")
   
-  print(flag_display_table)
+  if(nrow(flag_table)>0){
+    print(flag_display_table)
+  } else {
+    cat("  \n")
+    cat(glue("No {qtype} values detected"))
+    cat("  \n")
+  }
+  
 }
 
 for(i in 1:length(habitats)){
@@ -393,7 +412,14 @@ for(i in 1:length(habitats)){
   cat(glue("## {h}"))
   cat("  \n")
   
-  check_flag(h)
+  cat(glue("### Quantile Check"))
+  cat("  \n")
+  check_flag(h, qtype="quantile")
+  cat("  \n")
+  cat(glue("### Threshold Check"))
+  cat("  \n")
+  check_flag(h, qtype="threshold")
+  cat("  \n")
   
 }
 

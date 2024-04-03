@@ -161,42 +161,39 @@ program_counts <- function(data_old, data_new, habitat, param, quadsize="None"){
 }
 
 # Run quantiles and grab quantile data
-grab_quantiles <- function(df, habitat, param, quadsize="None", indicator="None"){
+grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile"){
+  
+  if(type=="quantile"){
+    grab_val_low <- as.name("LowQuantile")
+    grab_val_high <- as.name("HighQuantile")
+  } else if(type=="threshold"){
+    grab_val_low <- as.name("LowThreshold")
+    grab_val_high <- as.name("HighThreshold")
+  }
   
   if(quadsize=="None"){
-    if(!indicator=="None"){
-      if(indicator=="Community Composition"){
-        sg1_include <- c("Corallimorpharians", "Milleporans", "Octocoral", "Others", "Porifera", "Scleractinian", "NULL")
-      }
-      if(indicator=="Grazers and Reef Dependent Species"){
-        sg1_include <- c("Grazers and reef dependent species","Reef Fish")
-      }
-      
-      data <- df[ParameterName==param & SpeciesGroup1 %in% sg1_include, ]
-      
-    } else {
-      data <- df[ParameterName==param, ]
-    }
-    
+    data <- df[ParameterName==param, ]
     # Use ThresholdID for Total Nitrogen (use All, not Calculated)
     if(param=="Total Nitrogen"){
-      quant_low_value <- db_thresholds[ThresholdID==31, LowQuantile]
-      quant_high_value <- db_thresholds[ThresholdID==31, HighQuantile]
-    } else if(!indicator=="None"){
-      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & IndicatorName==indicator, LowQuantile]
-      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & IndicatorName==indicator, HighQuantile]
+      quant_low_value <- db_thresholds[ThresholdID==31, get(grab_val_low)]
+      quant_high_value <- db_thresholds[ThresholdID==31, get(grab_val_high)]
+    } else if(param=="Count" & habitat=="Coral"){
+      quant_low_value <- db_thresholds[ThresholdID==88, get(grab_val_low)]
+      quant_high_value <- db_thresholds[ThresholdID==88, get(grab_val_high)]
+      sg1_include <- c("Corallimorpharians", "Milleporans", "Octocoral", "Others", "Porifera", "Scleractinian", "NULL")
+      data <- data[SpeciesGroup1 %in% sg1_include, ]
     } else {
-      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, LowQuantile]
-      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, HighQuantile]
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, get(grab_val_low)]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, get(grab_val_high)]
     }
   } else {
     if(quadsize=="NA"){
-      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & is.na(QuadSize_m2), LowQuantile]
-      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & is.na(QuadSize_m2), HighQuantile]
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & is.na(QuadSize_m2), get(grab_val_low)]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & is.na(QuadSize_m2), get(grab_val_high)]
       data <- df[ParameterName==param & is.na(QuadSize_m2), ]
     } else {
-      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & QuadSize_m2==quadsize, LowQuantile]
-      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & QuadSize_m2==quadsize, HighQuantile]
+      quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & QuadSize_m2==quadsize, get(grab_val_low)]
+      quant_high_value <- db_thresholds[ParameterName==param & CombinedTable==habitat & QuadSize_m2==quadsize, get(grab_val_high)]
       data <- df[ParameterName==param & QuadSize_m2==quadsize, ]
     }
   }
@@ -225,7 +222,7 @@ setDT(db_thresholds)
 
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
-# habitats <- c("Species")
+# habitats <- c("Discrete")
 
 # Begin Discrete processing
 if("Discrete" %in% habitats){
@@ -252,11 +249,11 @@ if("Discrete" %in% habitats){
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(file, sep='|', na.strings = "NULL")
-    data_new <- data_new[Include==1 & MADup==1, ]
+    data_new <- data_new[MADup==1, ]
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
-    data_old <- data_old[Include==1 & MADup==1, ]
+    data_old <- data_old[MADup==1, ]
     
     # Full ParameterName for a given file
     param <- data_new[, unique(ParameterName)]
@@ -283,19 +280,22 @@ if("Discrete" %in% habitats){
     ### Compare columns and class types
     ## If they have different number of columns, list them in table below
     data_directory[[habitat]][["column_compare"]][[param]] <- compare_columns(
-      data_old, data_new, old_file_short, new_file_short, habitat, param)
+      data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
     
     ### Compare programs between exports
     ## If they have different lengths, record which programs are included/not included
     data_directory[[habitat]][["program_compare"]][[param]] <- compare_programs(
-      data_old, data_new, old_file_short, new_file_short, habitat, param)
+      data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
     
     ### Provide counts of data by program by parameter
     program_count_table <- bind_rows(program_count_table, program_counts(
-      data_old, data_new, habitat, param))
+      data_old[Include==1, ], data_new[Include==1, ], habitat, param))
     
     ### Grab quantile data
-    data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new, habitat, param)
+    data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new[Include==1, ], habitat, param, type="quantile")
+    
+    ### Grab threshold data
+    data_directory[[habitat]][["threshold"]][[param]] <- grab_quantiles(data_new, habitat, param, type="threshold")
     
     ### The following collects statistics about ValueQualifiers and includes them in the report
     if(collect_vq_data==TRUE){
@@ -362,11 +362,11 @@ if("Continuous" %in% habitats){
         # Read in data frame for each combined data export
         print(paste0("Reading in: ", new_file_short))
         data_new <- fread(new_file, sep='|', na.strings = "NULL")
-        data_new <- data_new[Include==1 & MADup==1, ]
+        data_new <- data_new[MADup==1, ]
         # Read in old data
         print(paste0("Reading in: ", old_file_short))
         data_old <- fread(old_file, sep='|', na.strings = "NULL")
-        data_old <- data_old[Include==1 & MADup==1, ]
+        data_old <- data_old[MADup==1, ]
         
         # Full ParameterName for a given file
         param <- data_new[, unique(ParameterName)]
@@ -395,19 +395,22 @@ if("Continuous" %in% habitats){
         ### Compare columns and class types
         ## If they have different number of columns, list them in table below
         data_directory[[habitat]][["column_compare"]][[param]] <- compare_columns(
-          data_old, data_new, old_file_short, new_file_short, habitat, param)
+          data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
         
         ### Compare programs between exports
         ## If they have different lengths, record which programs are included/not included
         data_directory[[habitat]][["program_compare"]][[param]] <- compare_programs(
-          data_old, data_new, old_file_short, new_file_short, habitat, param)
+          data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
         
         ### Provide counts of data by program by parameter
         program_count_table <- bind_rows(program_count_table, program_counts(
-          data_old, data_new, habitat, param))
+          data_old[Include==1, ], data_new[Include==1, ], habitat, param))
         
         ### Grab quantile data
-        data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new, habitat, param)
+        data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new[Include==1, ], habitat, param, type="quantile")
+        
+        ### Grab threshold data
+        data_directory[[habitat]][["threshold"]][[param]] <- grab_quantiles(data_new, habitat, param, type="threshold")
         
       }
     }
@@ -449,11 +452,11 @@ if("Species" %in% habitats){
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(file, sep='|', na.strings = "NULL")
-    data_new <- data_new[Include==1 & MADup==1, ]
+    data_new <- data_new[MADup==1, ]
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
-    data_old <- data_old[Include==1 & MADup==1, ]
+    data_old <- data_old[MADup==1, ]
     
     data_table <- data.table(
       "habitat" = habitat,
@@ -473,18 +476,18 @@ if("Species" %in% habitats){
     ### Compare columns and class types
     ## If they have different number of columns, list them in table below
     data_directory[["Species"]][["column_compare"]][[habitat]] <- compare_columns(
-      data_old, data_new, old_file_short, new_file_short, habitat, param)
+      data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
     
     ### Compare programs between exports
     ## If they have different lengths, record which programs are included/not included
     data_directory[["Species"]][["program_compare"]][[habitat]] <- compare_programs(
-      data_old, data_new, old_file_short, new_file_short, habitat, param)
+      data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
     
     ### Provide counts of data by program by parameter
     
     qsize <- ifelse(habitat=="Oyster", "Yes", "None")
     
-    p_count_df <- program_counts(data_old, data_new, "Species", param, quadsize=qsize)
+    p_count_df <- program_counts(data_old[Include==1, ], data_new[Include==1, ], "Species", param, quadsize=qsize)
     p_count_df$habitat <- habitat
     program_count_table <- bind_rows(program_count_table, p_count_df)
     
@@ -494,25 +497,19 @@ if("Species" %in% habitats){
       # Split by quad size
       if(habitat=="Oyster" & param %in% c("Shell Height","Number of Oysters Counted - Total",
                                           "Number of Oysters Counted - Live","Number of Oysters Counted - Dead")){
-        
         for(q in unique(data_new$QuadSize_m2)){
           param_q <- paste0(param, "(",q,")")
           q <- ifelse(is.na(q), "NA", q)
           ### Grab quantile data
-          data_directory[["Species"]][["quantile"]][[habitat]][[param_q]] <- grab_quantiles(data_new, habitat, param, quadsize=q, indicator="None")
-        }
-      } else if(habitat=="Coral" & param=="Count"){
-        for(i in c("Community Composition","Grazers and Reef Dependent Species")){
-          param_i <- paste0(param, "(",i,")")
-          data_directory[["Species"]][["quantile"]][[habitat]][[param_i]] <- grab_quantiles(data_new, habitat, param, quadsize="None", indicator=i)
+          data_directory[["Species"]][["quantile"]][[habitat]][[param_q]] <- grab_quantiles(data_new[Include==1, ], habitat, param, quadsize=q, type="quantile")
+          data_directory[["Species"]][["threshold"]][[habitat]][[param_q]] <- grab_quantiles(data_new, habitat, param, quadsize=q, type="threshold")
         }
       } else {
         ### Grab quantile data
-        data_directory[["Species"]][["quantile"]][[habitat]][[param]] <- grab_quantiles(data_new, habitat, param, quadsize="None", indicator="None")
+        data_directory[["Species"]][["quantile"]][[habitat]][[param]] <- grab_quantiles(data_new[Include==1, ], habitat, param, quadsize="None", type="quantile")
+        data_directory[["Species"]][["threshold"]][[habitat]][[param]] <- grab_quantiles(data_new, habitat, param, quadsize="None", type="threshold")
       }
-
     }
-    
   }
   
   data_directory[["Species"]][["comparison_table"]] <- comparison_table
@@ -528,3 +525,5 @@ rmarkdown::render(input = "comparison/ReportTemplate.Rmd",
                   output_file = paste0(file_out,".pdf"),
                   clean = TRUE)
 unlink(paste0(file_out,".md"))
+unlink(paste0(file_out,".log"))
+unlink(paste0(file_out,".text"))
