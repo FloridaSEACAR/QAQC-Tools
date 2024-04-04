@@ -64,7 +64,6 @@ colorize <- function(x, color) {sprintf("\\textcolor{%s}{%s}", color, x)}
 # Compare columns between exports
 compare_columns <- function(data_old, data_new, old_file_short, new_file_short,
                             habitat,param){
-
   if(length(names(data_old))!=length(names(data_new))){
     print(paste0("There is a difference in the number of columns for ", 
                  new_file_short, " vs. ", old_file_short))
@@ -83,9 +82,6 @@ compare_columns <- function(data_old, data_new, old_file_short, new_file_short,
     return(list("oldColumns" = oldColumns, "newColumns" = newColumns))
     
   }
-  
-  
-  
 }
 
 # Compare programs between exports
@@ -124,10 +120,6 @@ compare_programs <- function(data_old, data_new, old_file_short, new_file_short,
     old_programs_color <- unlist(lapply(old_programs, function(pid) {
       ifelse(pid %in% diff_df$pid, colorize_program(pid, diff_df$color_code), pid)
     }))
-    
-    # data_directory[["program_compare"]][[habitat]][[param]][["old_programs"]] <- old_programs_color
-    # data_directory[["program_compare"]][[habitat]][[param]][["new_programs"]] <- new_programs_color
-    # data_directory[["program_compare"]][[habitat]][[param]][["diff_df"]] <- diff_df
     
     print(paste0("There is a difference in the number of ProgramIDs for ",
                  new_file_short, " vs. ", old_file_short))
@@ -207,6 +199,40 @@ grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile")
   combined_subset <- bind_rows(subset_low, subset_high)
 }
 
+# Provides overview tables for SEACAR_QAQCFlagCode by ProgramID & Parameter
+flag_overview <- function(data_new, return = "wide"){
+  # Summarise by program
+  data <- data_new %>%
+    mutate(flags = str_split(SEACAR_QAQCFlagCode, "/")) %>%
+    unnest(flags) %>%
+    group_by(flags, ParameterName, ProgramID) %>%
+    summarise(n = n(), .groups="keep") %>%
+    arrange(ParameterName, flags)
+  
+  # Collect program totals by parameter
+  totals <- data_new %>%
+    group_by(ParameterName, ProgramID) %>%
+    summarise(n_total_prog = n(), .groups="keep")
+  
+  data_totals <- merge(data, totals, by = c("ProgramID","ParameterName"))
+  data_totals <- data_totals %>%
+    mutate(pct_flagged = round((n/n_total_prog)*100,2))
+  
+  # Pivot wide for better display in report
+  wide_table <- data_totals %>%
+    select(-pct_flagged) %>%
+    pivot_wider(names_from = flags, values_from = n, values_fill = 0) %>%
+    arrange(ParameterName, ProgramID)
+  
+  if(return=="wide"){
+    return(as.data.table(wide_table))
+  }
+  
+  if(return=="long"){
+    return(as.data.table(data_totals))
+  }
+}
+
 ## Import database thresholds
 ## Latest file available at:
 ## https://github.com/FloridaSEACAR/IndicatorQuantiles/blob/main/output/ScriptResults/Database_Thresholds.xlsx
@@ -222,7 +248,7 @@ setDT(db_thresholds)
 
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
-# habitats <- c("Discrete")
+# habitats <- c("Species")
 
 # Begin Discrete processing
 if("Discrete" %in% habitats){
@@ -296,6 +322,9 @@ if("Discrete" %in% habitats){
     
     ### Grab threshold data
     data_directory[[habitat]][["threshold"]][[param]] <- grab_quantiles(data_new, habitat, param, type="threshold")
+    
+    ### Provide overview of QAQC flags
+    data_directory[[habitat]][["flag_overview_wide"]][[param]] <- flag_overview(data_new[Include==1, ], return="wide")
     
     ### The following collects statistics about ValueQualifiers and includes them in the report
     if(collect_vq_data==TRUE){
@@ -412,6 +441,9 @@ if("Continuous" %in% habitats){
         ### Grab threshold data
         data_directory[[habitat]][["threshold"]][[param]] <- grab_quantiles(data_new, habitat, param, type="threshold")
         
+        ### Provide overview of QAQC flags
+        data_directory[[habitat]][["flag_overview_wide"]][[param]] <- flag_overview(data_new[Include==1, ], return="wide")
+        
       }
     }
   }
@@ -493,7 +525,6 @@ if("Species" %in% habitats){
     
     params <- unique(data_new$ParameterName)
     for(param in params){
-      
       # Split by quad size
       if(habitat=="Oyster" & param %in% c("Shell Height","Number of Oysters Counted - Total",
                                           "Number of Oysters Counted - Live","Number of Oysters Counted - Dead")){
@@ -510,7 +541,12 @@ if("Species" %in% habitats){
         data_directory[["Species"]][["threshold"]][[habitat]][[param]] <- grab_quantiles(data_new, habitat, param, quadsize="None", type="threshold")
       }
     }
+    
+    ### Provide overview of QAQC flags
+    data_directory[["Species"]][["flag_overview_wide"]][[habitat]] <- flag_overview(data_new[Include==1, ], return="wide")
   }
+  
+  
   
   data_directory[["Species"]][["comparison_table"]] <- comparison_table
   data_directory[["Species"]][["program_count_table"]] <- program_count_table
