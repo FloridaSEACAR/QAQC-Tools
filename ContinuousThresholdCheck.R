@@ -37,7 +37,7 @@ for (p in all_params){
   # read each file in
   for(file in files){
     
-    data <- fread(file, sep='|')
+    data <- fread(file, sep='|', na.strings = "NULL")
     
     # filter for high and low thresholds
     data <- data[(ResultValue < low_threshold) | (ResultValue > high_threshold), ]
