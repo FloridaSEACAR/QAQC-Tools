@@ -633,41 +633,72 @@ unlink(paste0(file_out,".log"))
 unlink(paste0(file_out,".txt"))
 
 # Export Excel overview tables
-vq_results <- bind_rows(data_directory[["Discrete WQ"]][["vq_program_table"]], .id = "Parameter")
+vq_results <- bind_rows(data_directory[["Discrete WQ"]][["vq_program_table"]], 
+                        .id = "Parameter")
 openxlsx::write.xlsx(vq_results, file="comparison/output/ValueQualifiers_by_Program.xlsx",
+                     colWidths= "auto",
                      headerStyle = createStyle(textDecoration = "BOLD"))
 
+# Combine tables from data_directory
 flag_results <- data.table()
 program_count_results <- data.table()
+filename_summary <- data.table()
 for(i in names(data_directory)){
+  # Handles "species" separately to account for habitat names
   if(i=="Species"){
-    flag_results_df <- bind_rows(data_directory[[i]][["flag_overview_wide"]], .id="Habitat") %>% 
+    flag_results_df <- bind_rows(data_directory[[i]][["flag_overview_wide"]], 
+                                 .id="Habitat") %>% 
       rename("Total Program Data" = n_total_prog)
     program_counts_df <- bind_rows(data_directory[[i]][["program_count_table"]]) %>%
       rename(parameter = ParameterName,
              Habitat = habitat)
+    
+    # Grab file names to include in export
+    newFileName <- bind_rows(data_directory[[i]][["new_file_name"]])
+    oldFileName <- bind_rows(data_directory[[i]][["old_file_name"]])
+    # Add file names for each habitat
+    fileNameSummary <- program_counts_df %>%
+      rowwise() %>%
+      mutate(oldFileName = oldFileName[[Habitat]],
+             newFileName = newFileName[[Habitat]]) %>%
+      group_by(Habitat, oldFileName, newFileName) %>%
+      summarise()
+    
   } else {
     flag_results_df <- bind_rows(data_directory[[i]][["flag_overview_wide"]]) %>% 
       rename("Total Program Data" = n_total_prog) %>%
       mutate(Habitat = i)
     program_counts_df <- bind_rows(data_directory[[i]][["program_count_table"]]) %>%
       mutate(Habitat = i)
+    # Grab file names to include in export
+    newFileName <- bind_rows(data_directory[[i]][["new_file_name"]])
+    oldFileName <- bind_rows(data_directory[[i]][["old_file_name"]])
+    # Add file names for each parameter
+    fileNameSummary <- program_counts_df %>%
+      rowwise() %>%
+      mutate(oldFileName = oldFileName[[parameter]],
+             newFileName = newFileName[[parameter]]) %>%
+      group_by(parameter, Habitat, oldFileName, newFileName) %>%
+      summarise()
   }
   flag_results <- bind_rows(flag_results, flag_results_df)
   program_count_results <- bind_rows(program_count_results, program_counts_df)
+  filename_summary <- bind_rows(filename_summary, fileNameSummary)
 }
 
-rm(program_counts_df, flag_results_df)
+rm(program_counts_df, flag_results_df, fileNameSummary)
 
 flag_results <- flag_results %>% select(
   ProgramID, ParameterName, Habitat, 
   "Total Program Data", "1Q", "8Q", "15Q", "16Q", "17Q")
 
-openxlsx::write.xlsx(flag_results, file="comparison/output/SEACARQAQCFlagCode_Overview.xlsx",
-                     headerStyle = createStyle(textDecoration = "BOLD"))
+openxlsx::write.xlsx(flag_results,
+                     file="comparison/output/SEACARQAQCFlagCode_Overview.xlsx",
+                     headerStyle = createStyle(textDecoration = "BOLD"),
+                     colWidths= "auto")
 
-openxlsx::write.xlsx(program_count_results, file="comparison/output/Program_Differences_by_Parameter.xlsx",
-                     headerStyle = createStyle(textDecoration = "BOLD"))
-
-# j <- vq_results %>% filter(ValueQualifier=="J") %>% group_by(Parameter) %>%
-#   summarise(n = sum(n_vq_data))
+openxlsx::write.xlsx(list("Filename Summary" = filename_summary, 
+                          "Program Differences" = program_count_results),
+                     file="comparison/output/Program_Differences_by_Parameter.xlsx",
+                     headerStyle = createStyle(textDecoration = "BOLD"),
+                     colWidths= "auto")
