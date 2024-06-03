@@ -12,6 +12,7 @@ library(extrafont)
 library(knitr)
 library(kableExtra)
 library(readxl)
+library(openxlsx)
 
 # Load in SEACAR combined tables
 source("seacar_data_location.R")
@@ -41,7 +42,11 @@ new_hab_files <- str_subset(new_files, "All_")
 old_hab_files <- str_subset(old_files, "All_")
 
 # Determine whether to collect & include VQ data in reports (too many pages)
-collect_vq_data <- FALSE
+collect_vq_data <- TRUE
+
+# Determines whether or not flag_overviews are shown in report
+# Export (SEACARQAQCFlagCode_Overview.xlsx) is still created
+show_flag_overview <- FALSE
 
 # Display file names in report (otherwise dates in summary table may be sufficient)
 file_name_display <- FALSE
@@ -201,13 +206,16 @@ grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile")
 
 # Provides overview tables for SEACAR_QAQCFlagCode by ProgramID & Parameter
 flag_overview <- function(data_new, return = "wide"){
-  # Summarise by program
-  data <- data_new %>%
+  flag_data <- data_new %>%
     mutate(flags = str_split(SEACAR_QAQCFlagCode, "/")) %>%
-    unnest(flags) %>%
+    unnest(flags)
+  
+  # Summarise by program
+  data <- flag_data %>%
     group_by(flags, ParameterName, ProgramID) %>%
     summarise(n = n(), .groups="keep") %>%
-    arrange(ParameterName, flags)
+    arrange(ParameterName, flags) %>%
+    filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q"))
   
   # Collect program totals by parameter
   totals <- data_new %>%
@@ -216,7 +224,8 @@ flag_overview <- function(data_new, return = "wide"){
   
   data_totals <- merge(data, totals, by = c("ProgramID","ParameterName"))
   data_totals <- data_totals %>%
-    mutate(pct_flagged = round((n/n_total_prog)*100,2))
+    mutate(pct_flagged = round((n/n_total_prog)*100,2)) %>%
+    arrange(flags)
   
   # Pivot wide for better display in report
   wide_table <- data_totals %>%
@@ -224,12 +233,60 @@ flag_overview <- function(data_new, return = "wide"){
     pivot_wider(names_from = flags, values_from = n, values_fill = 0) %>%
     arrange(ParameterName, ProgramID)
   
+  # Wide format return (USE THIS)
   if(return=="wide"){
     return(as.data.table(wide_table))
   }
-  
+  # Long format return
   if(return=="long"){
     return(as.data.table(data_totals))
+  }
+  
+  # Grab 15Q values
+  if(return=="fifteen"){
+    return(as.data.table(flag_data %>% filter(flags=="15Q")))
+  }
+}
+
+expected_data <- list()
+expected_values_check <- function(param, data_new, habitat){
+  # Grab text-based value from DB Thresholds file
+  expected_text <- db_thresholds[ParameterName==param & Habitat==habitat, 
+                                 ExpectedValues]
+  
+  e_data <- data.table()
+  # Only apply expected values check where necessary
+  if(length(expected_text)>0){
+    
+    if(param=="Percent Occurrence" & habitat=="SAV"){
+      expected_text <- "0 to 100 (inclusive)"
+    }
+    
+    if(expected_text=="0 to 100 (inclusive)"){
+      e_data <- data_new[Include==1 & ParameterName==param &
+                           (ResultValue < 0 & ResultValue > 100), ]
+    }
+    if(expected_text=="boolean"){
+      e_data <- data_new[Include==1 & ParameterName==param &
+                           (!ResultValue %in% c(0,1)), ]
+    }
+    if(expected_text=="0 or positive integers"){
+      e_data <- data_new[Include==1 & ParameterName==param &
+                           (!ResultValue >= 0), ]
+    }
+    if(expected_text=="0,0.1,0.5,1,2,3,4,5"){
+      e_data <- data_new[Include==1 & ParameterName==param &
+                           (!ResultValue %in% c(0,0.1,0.5,1,2,3,4,5)), ]
+    }
+    if(expected_text=="VOB, 999, >B"){
+      # Skipping until Claude's new procedures are implemented
+      next
+    }
+    
+    
+    if(nrow(e_data)>0){
+      expected_data[[habitat]][[param]] <- e_data
+    }
   }
 }
 
@@ -248,7 +305,7 @@ setDT(db_thresholds)
 
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
-# habitats <- c("Species")
+# habitats <- c("Discrete")
 
 # Begin Discrete processing
 if("Discrete" %in% habitats){
@@ -326,6 +383,9 @@ if("Discrete" %in% habitats){
     ### Provide overview of QAQC flags
     data_directory[[habitat]][["flag_overview_wide"]][[param]] <- flag_overview(data_new[Include==1, ], return="wide")
     
+    ### Grab values that fall outside of Expected values (15Q check)
+    data_directory[[habitat]][["fifteenQ"]][[param]] <- flag_overview(data_new[Include==1, ], return="fifteen")
+    
     ### The following collects statistics about ValueQualifiers and includes them in the report
     if(collect_vq_data==TRUE){
       ## Begin Value Qualifier Data Collection ----
@@ -354,8 +414,8 @@ if("Discrete" %in% habitats){
         arrange(ValueQualifier)
       
       # append individual tables into data_directory
-      data_directory[[habitat]][["vq_table"]][[param]] <- vq_table
-      data_directory[[habitat]][["vq_program_table"]][[param]] <- vq_program_table
+      if(nrow(vq_table)>0){data_directory[[habitat]][["vq_table"]][[param]] <- vq_table}
+      if(nrow(vq_program_table)>0){data_directory[[habitat]][["vq_program_table"]][[param]] <- vq_program_table}
     }
   }
   
@@ -444,6 +504,9 @@ if("Continuous" %in% habitats){
         ### Provide overview of QAQC flags
         data_directory[[habitat]][["flag_overview_wide"]][[param]] <- flag_overview(data_new[Include==1, ], return="wide")
         
+        ### Grab values that fall outside of Expected values (15Q check)
+        data_directory[[habitat]][["fifteenQ"]][[param]] <- flag_overview(data_new[Include==1, ], return="fifteen")
+        
       }
     }
   }
@@ -525,6 +588,10 @@ if("Species" %in% habitats){
     
     params <- unique(data_new$ParameterName)
     for(param in params){
+      
+      ### Grab values that fall outside of Expected values (15Q check)
+      expected_values_check(param, data_new, habitat)
+      
       # Split by quad size
       if(habitat=="Oyster" & param %in% c("Shell Height","Number of Oysters Counted - Total",
                                           "Number of Oysters Counted - Live","Number of Oysters Counted - Dead")){
@@ -544,16 +611,17 @@ if("Species" %in% habitats){
     
     ### Provide overview of QAQC flags
     data_directory[["Species"]][["flag_overview_wide"]][[habitat]] <- flag_overview(data_new[Include==1, ], return="wide")
+    
+    ### Grab values that fall outside of Expected values (15Q check)
+    data_directory[["Species"]][["fifteenQ"]][[habitat]] <- flag_overview(data_new[Include==1, ], return="fifteen")
   }
-  
-  
   
   data_directory[["Species"]][["comparison_table"]] <- comparison_table
   data_directory[["Species"]][["program_count_table"]] <- program_count_table
   
 }
 
-file_out <- paste0(old_file_shorter, "-vs-", new_file_shorter,"_Report")
+file_out <- paste0(new_file_shorter,"_Comparison_Report")
 
 # Render reports
 rmarkdown::render(input = "comparison/ReportTemplate.Rmd",
@@ -562,4 +630,44 @@ rmarkdown::render(input = "comparison/ReportTemplate.Rmd",
                   clean = TRUE)
 unlink(paste0(file_out,".md"))
 unlink(paste0(file_out,".log"))
-unlink(paste0(file_out,".text"))
+unlink(paste0(file_out,".txt"))
+
+# Export Excel overview tables
+vq_results <- bind_rows(data_directory[["Discrete WQ"]][["vq_program_table"]], .id = "Parameter")
+openxlsx::write.xlsx(vq_results, file="comparison/output/ValueQualifiers_by_Program.xlsx",
+                     headerStyle = createStyle(textDecoration = "BOLD"))
+
+flag_results <- data.table()
+program_count_results <- data.table()
+for(i in names(data_directory)){
+  if(i=="Species"){
+    flag_results_df <- bind_rows(data_directory[[i]][["flag_overview_wide"]], .id="Habitat") %>% 
+      rename("Total Program Data" = n_total_prog)
+    program_counts_df <- bind_rows(data_directory[[i]][["program_count_table"]]) %>%
+      rename(parameter = ParameterName,
+             Habitat = habitat)
+  } else {
+    flag_results_df <- bind_rows(data_directory[[i]][["flag_overview_wide"]]) %>% 
+      rename("Total Program Data" = n_total_prog) %>%
+      mutate(Habitat = i)
+    program_counts_df <- bind_rows(data_directory[[i]][["program_count_table"]]) %>%
+      mutate(Habitat = i)
+  }
+  flag_results <- bind_rows(flag_results, flag_results_df)
+  program_count_results <- bind_rows(program_count_results, program_counts_df)
+}
+
+rm(program_counts_df, flag_results_df)
+
+flag_results <- flag_results %>% select(
+  ProgramID, ParameterName, Habitat, 
+  "Total Program Data", "1Q", "8Q", "15Q", "16Q", "17Q")
+
+openxlsx::write.xlsx(flag_results, file="comparison/output/SEACARQAQCFlagCode_Overview.xlsx",
+                     headerStyle = createStyle(textDecoration = "BOLD"))
+
+openxlsx::write.xlsx(program_count_results, file="comparison/output/Program_Differences_by_Parameter.xlsx",
+                     headerStyle = createStyle(textDecoration = "BOLD"))
+
+# j <- vq_results %>% filter(ValueQualifier=="J") %>% group_by(Parameter) %>%
+#   summarise(n = sum(n_vq_data))

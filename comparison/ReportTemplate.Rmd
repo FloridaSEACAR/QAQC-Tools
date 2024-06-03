@@ -251,7 +251,8 @@ for(i in 1:length(habitats)){
   ## SEACAR_QAQCFlagCode Overview ##
   ##################################
   
-  if(length(names(data_directory[[h]][["flag_overview_wide"]]))>0){
+  if(show_flag_overview==TRUE){
+    if(length(names(data_directory[[h]][["flag_overview_wide"]]))>0){
     
     cat("\\newpage")
     cat("  \n")
@@ -259,17 +260,25 @@ for(i in 1:length(habitats)){
     cat("  \n")
     
     for(par in names(data_directory[[h]][["flag_overview_wide"]])){
-      cat("  \n")
-      cat(glue("### {par}"))
-      cat("  \n")
       wide_table <- data_directory[[h]][["flag_overview_wide"]][[par]]
       
       if(h=="Species"){wide_table <- wide_table %>% arrange(ProgramID, ParameterName)}
       
       names(wide_table) <- gsub("_", " ", names(wide_table))
-      print(make_kable(wide_table, paste0("Overview of SEACAR Flag Codes for ",par), format="latex"))
+      
+      # Only print table when there are results
+      if(nrow(wide_table)>0){
+        cat("  \n")
+        cat(glue("### {par}"))
+        cat("  \n")
+        
+        print(make_kable(wide_table, paste0("Overview of SEACAR Flag Codes for ",par), format="latex"))
+        cat("  \n")
+      }
+      
       cat("  \n")
     }
+  }
   }
   
   ######################
