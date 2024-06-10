@@ -69,6 +69,8 @@ extractYears <- function(text){
 
 # Create empty list to populate with desired dataframes
 data_storage <- list()
+# Empty integer to store number of unexpected FALSE values. should be zero
+countFalse <- integer()
 
 # Begin loop ----
 # loop through each file / habitat
@@ -93,7 +95,7 @@ for(i in 1:nrow(hab_df)){
   # Select only values with model results
   df <- df[!is.na(get(na_check)), ]
   
-  # Apply expectedText functions to their respective
+  # Apply expectedText functions to their respective habitats
   if(full_name=="oyster"){
     df <- df %>% 
       rowwise() %>%
@@ -103,6 +105,14 @@ for(i in 1:nrow(hab_df)){
       unnest(years) %>%
       mutate(yearMinMatchEarliestLiveDate = ifelse(yearMin==EarliestLiveDate, TRUE, FALSE),
              yearMaxMatchLatestLiveDate = ifelse(yearMax==LatestLiveDate, TRUE, FALSE))
+    setDT(df)
+    
+    count <- nrow(df[containsExpectedText==FALSE]) +
+      nrow(df[yearMinMatchEarliestLiveDate==FALSE]) +
+      nrow(df[yearMaxMatchLatestLiveDate==FALSE])
+    
+    countFalse <- countFalse + count
+    
   } else if(full_name=="nekton"){
     df <- df %>% 
       rowwise() %>%
@@ -116,6 +126,16 @@ for(i in 1:nrow(hab_df)){
       unnest(years) %>%
       mutate(yearMinMatchEarliestYear = ifelse(yearMin==EarliestYear, TRUE, FALSE),
              yearMaxMatchLatestYear = ifelse(yearMax==LatestYear, TRUE, FALSE))
+    setDT(df)
+    
+    count <- nrow(df[containsExpectedMean==FALSE]) +
+      nrow(df[containsExpectedMin==FALSE]) +
+      nrow(df[containsExpectedMax==FALSE]) +
+      nrow(df[yearMinMatchEarliestYear==FALSE]) +
+      nrow(df[yearMaxMatchLatestYear==FALSE])
+    
+    countFalse <- countFalse + count
+    
   } else if(full_name=="sav"){
     df <- df %>%
       rowwise() %>%
@@ -125,6 +145,14 @@ for(i in 1:nrow(hab_df)){
       unnest(years) %>%
       mutate(yearMinMatchEarliestYear = ifelse(yearMin==EarliestYear, TRUE, FALSE),
              yearMaxMatchLatestYear = ifelse(yearMax==LatestYear, TRUE, FALSE))
+    setDT(df)
+    
+    count <- nrow(df[containsExpectedText==FALSE]) +
+      nrow(df[yearMinMatchEarliestYear==FALSE]) +
+      nrow(df[yearMaxMatchLatestYear==FALSE])
+    
+    countFalse <- countFalse + count
+    
   } else if(full_name=="wc"){
     df <- df %>%
       rowwise() %>%
@@ -134,6 +162,14 @@ for(i in 1:nrow(hab_df)){
       unnest(years) %>%
       mutate(yearMinMatchEarliestYear = ifelse(yearMin==EarliestYear, TRUE, FALSE),
              yearMaxMatchLatestYear = ifelse(yearMax==LatestYear, TRUE, FALSE))
+    setDT(df)
+    
+    count <- nrow(df[containsExpectedText==FALSE]) +
+      nrow(df[yearMinMatchEarliestYear==FALSE]) +
+      nrow(df[yearMaxMatchLatestYear==FALSE])
+    
+    countFalse <- countFalse + count
+    
   }
   
   # Store "checked" dataframe to display results
@@ -141,11 +177,13 @@ for(i in 1:nrow(hab_df)){
 }
 
 # Add descriptive statement to first worksheet
-textStatement <- "'_checked' tabs are subsets of the original dataframes 
-containing only the entries with model results. New columns have been 
-added to check for TrendText accuracy."
+textStatement <- "'_checked' tabs are subsets of the original dataframes containing only the entries with model results. New columns have been added to check for TrendText accuracy."
+countFalseStatement <- ifelse(length(countFalse)>0, 
+                              paste0("ERROR needs attention, number of FALSE values: ", countFalse), 
+                              "There are zero unexpected FALSE values")
 fileNameTextStatement <- rbind(hab_df, 
-                               data.table("abbrev" = c(NA,textStatement),
+                               data.table("abbrev" = c(NA,textStatement,NA,
+                                                       countFalseStatement),
                                           "full_name" = NA,
                                           "fileName" = NA))
 
