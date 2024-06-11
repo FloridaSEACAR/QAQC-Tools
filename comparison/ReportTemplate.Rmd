@@ -20,7 +20,7 @@ knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
 make_kable <- function(data_table, table_caption, format="latex"){
   return(
     kbl(data_table,
-        format="latex",
+        format=format,
         caption=table_caption,
         escape=F,
         digits=2,
@@ -224,27 +224,29 @@ for(i in 1:length(habitats)){
   ## COLUMN COMPARISON ##
   #######################
   
-  if(length(names(data_directory[[h]][['column_compare']]))>0){
-    cat("\\newpage")
-    cat("  \n")
-    cat("## Column Differences")
-    cat("  \n")
-    cat("There is a difference in Columns between exports for the following parameters:")
-    cat("  \n")
-    for(par in names(data_directory[[h]][['column_compare']])){
+  if(show_columns){
+    if(length(names(data_directory[[h]][['column_compare']]))>0){
+      cat("\\newpage")
       cat("  \n")
-      cat(glue("### {par}"))
+      cat("## Column Differences")
       cat("  \n")
-      cat("Columns in old export: ")
+      cat("There is a difference in Columns between exports for the following parameters:")
       cat("  \n")
-      print(make_kable(data_directory[[h]][['column_compare']][[par]][["oldColumns"]], "Old Columns"))
-      cat("  \n")
-      cat("Columns in new export: ")
-      cat("  \n")
-      print(make_kable(data_directory[[h]][['column_compare']][[par]][["newColumns"]], "New Columns"))
+      for(par in names(data_directory[[h]][['column_compare']])){
+        cat("  \n")
+        cat(glue("### {par}"))
+        cat("  \n")
+        cat("Columns in old export: ")
+        cat("  \n")
+        print(make_kable(data_directory[[h]][['column_compare']][[par]][["oldColumns"]], "Old Columns", format = "simple"))
+        cat("  \n")
+        cat("Columns in new export: ")
+        cat("  \n")
+        print(make_kable(data_directory[[h]][['column_compare']][[par]][["newColumns"]], "New Columns", format = "simple"))
+        cat("  \n")
+      }
       cat("  \n")
     }
-    cat("  \n")
   }
   
   ##################################
@@ -479,5 +481,120 @@ for(i in 1:length(habitats)){
   cat("  \n")
   
 }
+
+```
+
+```{r expected values check, results='asis'}
+# Function to check values
+expectedCheck <- function(param, habitat, df, pid, return="n"){
+  setDT(df)
+  df <- df[ParameterName==param & ProgramID==pid, ]
+  # Grab text-based value from DB Thresholds file
+  expected_text <- db_thresholds[ParameterName==param & Habitat==habitat, 
+                                 ExpectedValues]
+  # Only apply expected values check where necessary
+  if(length(expected_text)>0){
+    
+    if(param=="Percent Occurrence" & habitat=="Submerged Aquatic Vegetation"){
+      expected_text <- "0 to 100 (inclusive)"
+    }
+    
+    if(expected_text=="0 to 100 (inclusive)"){
+      e_data <- df[Include==1 & ParameterName==param &
+                     (ResultValue < 0 & ResultValue > 100), ]
+    }
+    if(expected_text=="boolean"){
+      e_data <- df[Include==1 & ParameterName==param &
+                     (!ResultValue %in% c(0,1)), ]
+    }
+    if(expected_text=="0 or positive integers"){
+      e_data <- df[Include==1 & ParameterName==param &
+                     (!ResultValue >= 0), ]
+    }
+    if(expected_text=="0,0.1,0.5,1,2,3,4,5"){
+      e_data <- df[Include==1 & ParameterName==param &
+                     (!ResultValue %in% c(0,0.1,0.5,1,2,3,4,5)), ]
+    }
+    if(expected_text=="VOB, 999, >B"){
+      # Handled in other function
+      next
+    }
+  }
+  if(return=="n"){
+    return(nrow(e_data))
+  } else if(return=="text"){
+    return(expected_text)
+  }
+}
+
+# Gather 15Q values
+expected_vals <- data.table()
+for(i in names(data_directory)){
+  for(p in names(data_directory[[i]][["fifteenQ"]])){
+    df <- data_directory[[i]][["fifteenQ"]][[p]]
+    if(nrow(df)>0){
+      expected_vals <- rbind(expected_vals, df)
+    }
+  }  
+}
+
+expected_values <- expected_vals %>% 
+  group_by(Habitat, ParameterName, ProgramID) %>%
+  summarise("N Data Flagged" = n())
+
+expected_values <- expected_values %>%
+  rowwise() %>%
+  mutate("N Unexpected Values" = expectedCheck(ParameterName, Habitat, 
+                                                       expected_vals, ProgramID, 
+                                                       return="n"),
+         "Expected Values" = expectedCheck(ParameterName, Habitat, 
+                                           expected_vals, ProgramID, 
+                                           return="text"))
+
+cat("  \n")
+cat("\\newpage")
+cat("# Expected Values Check (15Q)")
+cat("  \n")
+for(habitat in unique(expected_values$Habitat)){
+  cat(glue("## {habitat}"))
+  cat("  \n")
+  print(make_kable(expected_values %>%
+                     ungroup() %>%
+                     select(-Habitat), 
+                   table_caption = "Overview of 15Q - Expected Values Check"))
+  cat("  \n")
+}
+cat("  \n")
+
+```
+
+```{r Secchi VOB, results='asis', eval=FALSE}
+secchiCheck <- function(pid, df){
+  e_data <- df %>% filter(ProgramID==pid, str_detect(SEACAR))
+  return(nrow(e_data))
+}
+
+secchi <- fread(secchi <- str_subset(wq_disc_files, "Secchi"), 
+                sep='|', na.strings = "NULL")
+
+secchi_vob <- secchi %>% filter(TotalDepth_m==ResultValue)
+
+secchi_display <- secchi_vob %>% group_by(ProgramID) %>%
+  summarise("N Secchi VOB" = n())
+  
+secchi_display <- secchi_display %>%
+  rowwise() %>%
+  mutate("N Flagged 8Q" = secchiCheck(ProgramID, secchi_vob))
+
+cat("  \n")
+cat("# Secchi Depth Visible on Bottom")
+cat("  \n")
+cat("*N Secchi VOB* is the count of data where TotalDepth_m == ResultValue")
+cat("  \n")
+cat("*N Flagged 8Q* is the count of data whereSEACAR_QAQCFlagCode contains *8Q* designation")
+cat("  \n")
+print(make_kable(secchi_display, 
+                 table_caption = "Overview of 8Q - Secchi Depth: Visible on Bottom"))
+cat("  \n")
 
 ```

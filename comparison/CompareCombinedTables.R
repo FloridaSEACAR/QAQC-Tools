@@ -14,8 +14,12 @@ library(kableExtra)
 library(readxl)
 library(openxlsx)
 
+# Set working directory
+wd <- dirname(getActiveDocumentContext()$path)
+setwd(wd)
+
 # Load in SEACAR combined tables
-source("seacar_data_location.R")
+source("../seacar_data_location.R")
 
 # archive subfolder must contain a folder with the date of combined tables
 # Ideal workflow upon new combined table export is to place old export files 
@@ -24,7 +28,7 @@ source("seacar_data_location.R")
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2024-Feb-23"
+old_file_date <- "2024-Apr-15"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
 old_files <- list.files((paste0(seacar_data_location,"archive/",old_file_date)), full.names = TRUE)
@@ -53,6 +57,9 @@ file_name_display <- FALSE
 
 # Test variable to delete a column to check column comparison functionality
 # test_columns <- FALSE
+
+# Variable to show Column Differences in Export or not
+show_columns <- FALSE
 
 ## Variables set to FALSE, script will change to TRUE if conditions met
 columns_differ <- FALSE
@@ -248,53 +255,11 @@ flag_overview <- function(data_new, return = "wide"){
   }
 }
 
-expected_data <- list()
-expected_values_check <- function(param, data_new, habitat){
-  # Grab text-based value from DB Thresholds file
-  expected_text <- db_thresholds[ParameterName==param & Habitat==habitat, 
-                                 ExpectedValues]
-  
-  e_data <- data.table()
-  # Only apply expected values check where necessary
-  if(length(expected_text)>0){
-    
-    if(param=="Percent Occurrence" & habitat=="SAV"){
-      expected_text <- "0 to 100 (inclusive)"
-    }
-    
-    if(expected_text=="0 to 100 (inclusive)"){
-      e_data <- data_new[Include==1 & ParameterName==param &
-                           (ResultValue < 0 & ResultValue > 100), ]
-    }
-    if(expected_text=="boolean"){
-      e_data <- data_new[Include==1 & ParameterName==param &
-                           (!ResultValue %in% c(0,1)), ]
-    }
-    if(expected_text=="0 or positive integers"){
-      e_data <- data_new[Include==1 & ParameterName==param &
-                           (!ResultValue >= 0), ]
-    }
-    if(expected_text=="0,0.1,0.5,1,2,3,4,5"){
-      e_data <- data_new[Include==1 & ParameterName==param &
-                           (!ResultValue %in% c(0,0.1,0.5,1,2,3,4,5)), ]
-    }
-    if(expected_text=="VOB, 999, >B"){
-      # Skipping until Claude's new procedures are implemented
-      next
-    }
-    
-    
-    if(nrow(e_data)>0){
-      expected_data[[habitat]][[param]] <- e_data
-    }
-  }
-}
-
 ## Import database thresholds
 ## Latest file available at:
 ## https://github.com/FloridaSEACAR/IndicatorQuantiles/blob/main/output/ScriptResults/Database_Thresholds.xlsx
 
-db_thresholds <- read_xlsx("comparison/data/Database_Thresholds.xlsx", skip=2)
+db_thresholds <- read_xlsx("data/Database_Thresholds.xlsx", skip=2)
 
 db_thresholds <- db_thresholds %>% 
   filter(!IndicatorName=="Acreage") %>%
@@ -409,7 +374,8 @@ if("Discrete" %in% habitats){
         arrange(ValueQualifierSource, ValueQualifier)
       
       vq_program_table <- mod_data %>%
-        group_by(ProgramID, ProgramName, ValueQualifier, ValueQualifierSource) %>%
+        group_by(ProgramID, ProgramName, ValueQualifier, 
+                 ValueQualifierSource, ActivityType) %>%
         summarise(n_vq_data = n(), .groups = "keep") %>%
         arrange(ValueQualifier)
       
@@ -589,9 +555,6 @@ if("Species" %in% habitats){
     params <- unique(data_new$ParameterName)
     for(param in params){
       
-      ### Grab values that fall outside of Expected values (15Q check)
-      expected_values_check(param, data_new, habitat)
-      
       # Split by quad size
       if(habitat=="Oyster" & param %in% c("Shell Height","Number of Oysters Counted - Total",
                                           "Number of Oysters Counted - Live","Number of Oysters Counted - Dead")){
@@ -621,12 +584,12 @@ if("Species" %in% habitats){
   
 }
 
-file_out <- paste0(new_file_shorter,"_Comparison_Report")
+file_out <- paste0("Comparison_Report_",gsub("-","",Sys.Date()))
 
 # Render reports
-rmarkdown::render(input = "comparison/ReportTemplate.Rmd",
+rmarkdown::render(input = "ReportTemplate.Rmd",
                   output_format = "pdf_document",
-                  output_file = paste0(file_out,".pdf"),
+                  output_file = paste0("output/",file_out,".pdf"),
                   clean = TRUE)
 unlink(paste0(file_out,".md"))
 unlink(paste0(file_out,".log"))
@@ -635,9 +598,6 @@ unlink(paste0(file_out,".txt"))
 # Export Excel overview tables
 vq_results <- bind_rows(data_directory[["Discrete WQ"]][["vq_program_table"]], 
                         .id = "Parameter")
-openxlsx::write.xlsx(vq_results, file="comparison/output/ValueQualifiers_by_Program.xlsx",
-                     colWidths= "auto",
-                     headerStyle = createStyle(textDecoration = "BOLD"))
 
 # Combine tables from data_directory
 flag_results <- data.table()
@@ -663,7 +623,6 @@ for(i in names(data_directory)){
              newFileName = newFileName[[Habitat]]) %>%
       group_by(Habitat, oldFileName, newFileName) %>%
       summarise()
-    
   } else {
     flag_results_df <- bind_rows(data_directory[[i]][["flag_overview_wide"]]) %>% 
       rename("Total Program Data" = n_total_prog) %>%
@@ -686,19 +645,20 @@ for(i in names(data_directory)){
   filename_summary <- bind_rows(filename_summary, fileNameSummary)
 }
 
-rm(program_counts_df, flag_results_df, fileNameSummary)
+rm(program_counts_df, flag_results_df, fileNameSummary, expected_vals)
 
 flag_results <- flag_results %>% select(
   ProgramID, ParameterName, Habitat, 
   "Total Program Data", "1Q", "8Q", "15Q", "16Q", "17Q")
 
-openxlsx::write.xlsx(flag_results,
-                     file="comparison/output/SEACARQAQCFlagCode_Overview.xlsx",
-                     headerStyle = createStyle(textDecoration = "BOLD"),
-                     colWidths= "auto")
+# Create list in format "WorksheetName" = datatable
+ws <- list("Filename Summary" = filename_summary, 
+           "Program Differences" = program_count_results,
+           "SEACAR QAQCFlag Overview" = flag_results,
+           "ValueQualifiers by Program" = vq_results)
 
-openxlsx::write.xlsx(list("Filename Summary" = filename_summary, 
-                          "Program Differences" = program_count_results),
-                     file="comparison/output/Program_Differences_by_Parameter.xlsx",
+openxlsx::write.xlsx(ws,
+                     file=paste0("output/Comparison_Report_Export_",
+                                 gsub("-","",Sys.Date()), ".xlsx"),
                      headerStyle = createStyle(textDecoration = "BOLD"),
                      colWidths= "auto")
