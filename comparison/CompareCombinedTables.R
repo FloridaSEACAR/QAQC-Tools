@@ -13,6 +13,7 @@ library(knitr)
 library(kableExtra)
 library(readxl)
 library(openxlsx)
+library(rstudioapi)
 
 # Set working directory
 wd <- dirname(getActiveDocumentContext()$path)
@@ -28,7 +29,7 @@ source("../seacar_data_location.R")
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2024-Apr-15"
+old_file_date <- "2024-Jun-06"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
 old_files <- list.files((paste0(seacar_data_location,"archive/",old_file_date)), full.names = TRUE)
@@ -184,7 +185,7 @@ grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile")
     } else if(param=="Count" & habitat=="Coral"){
       quant_low_value <- db_thresholds[ThresholdID==88, get(grab_val_low)]
       quant_high_value <- db_thresholds[ThresholdID==88, get(grab_val_high)]
-      sg1_include <- c("Corallimorpharians", "Milleporans", "Octocoral", "Others", "Porifera", "Scleractinian", "NULL")
+      sg1_include <- c("Corallimorpharians", "Milleporans", "Octocorals", "Others", "Porifera", "Scleractinians", "NULL")
       data <- data[SpeciesGroup1 %in% sg1_include, ]
     } else {
       quant_low_value <- db_thresholds[ParameterName==param & CombinedTable==habitat, get(grab_val_low)]
@@ -222,8 +223,8 @@ flag_overview <- function(data_new, return = "wide"){
     group_by(flags, ParameterName, ProgramID) %>%
     summarise(n = n(), .groups="keep") %>%
     arrange(ParameterName, flags) %>%
-    filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q"))
-  
+    filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q","18Q","19Q")) # filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q"))
+    
   # Collect program totals by parameter
   totals <- data_new %>%
     group_by(ParameterName, ProgramID) %>%
@@ -497,6 +498,8 @@ if("Species" %in% habitats){
     # pattern to grab relevant "old" file
     pattern <- str_split(str_split(new_file_short, "All_")[[1]][2], "_Parameters")[[1]][1]
     # pattern is habitat name
+    # New format: Oyster -> OYSTER
+    pattern <- ifelse(pattern=="OYSTER", str_to_title(pattern), pattern)
     
     # Match habitat name with format of db_thresholds, i.e. CORAL to Coral
     habitat <- ifelse(pattern %in% c("CORAL","NEKTON"), str_to_title(pattern), pattern)
@@ -645,11 +648,11 @@ for(i in names(data_directory)){
   filename_summary <- bind_rows(filename_summary, fileNameSummary)
 }
 
-rm(program_counts_df, flag_results_df, fileNameSummary, expected_vals)
+rm(program_counts_df, flag_results_df, fileNameSummary)
 
-flag_results <- flag_results %>% select(
-  ProgramID, ParameterName, Habitat, 
-  "Total Program Data", "1Q", "8Q", "15Q", "16Q", "17Q")
+# flag_results <- flag_results %>% select(
+#   ProgramID, ParameterName, Habitat, 
+#   "Total Program Data", "1Q", "8Q", "15Q", "16Q", "17Q")
 
 # Create list in format "WorksheetName" = datatable
 ws <- list("Filename Summary" = filename_summary, 

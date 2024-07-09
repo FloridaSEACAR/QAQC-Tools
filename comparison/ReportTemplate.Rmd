@@ -355,9 +355,12 @@ check_flag <- function(h, qtype="quantile"){
     high_flag_code <- "17Q"
     low_flag_code <- "16Q"
   } else if(qtype=="threshold"){
-    high_flag_code <- "2Q|3Q"
-    low_flag_code <- "4Q|5Q"
+    high_flag_code <- "2Q"
+    low_flag_code <- "4Q"
   }
+  # Account for exact matches
+  high_flag_code <- paste0("\\b", high_flag_code, "\\b")
+  low_flag_code <- paste0("\\b", low_flag_code, "\\b")
   
   if(!h=="Species"){
     for(i in names(data_directory[[h]][[qtype]])){
@@ -367,9 +370,9 @@ check_flag <- function(h, qtype="quantile"){
     # Compute statistics grouped by ParameterName
     flag_table <- data_combined_subset[,
                                        .(n_high = sum(q_subset == "high"),
-                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, high_flag_code)),
+                                         n_high_flagged = sum(str_detect(SEACAR_QAQCFlagCode, high_flag_code)),
                                          n_low = sum(q_subset == "low"),
-                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, low_flag_code)),
+                                         n_low_flagged = sum(str_detect(SEACAR_QAQCFlagCode, low_flag_code)),
                                          n_included = sum(Include==1)),
                                        by = ParameterName]
     
@@ -386,9 +389,9 @@ check_flag <- function(h, qtype="quantile"){
     # Compute statistics grouped by ParameterName
     flag_table <- data_combined_subset[, 
                                        .(n_high = sum(q_subset == "high"),
-                                         n_high_flagged = sum(q_subset=="high" & str_detect(SEACAR_QAQCFlagCode, high_flag_code)),
+                                         n_high_flagged = sum(str_detect(SEACAR_QAQCFlagCode, high_flag_code)),
                                          n_low = sum(q_subset == "low"),
-                                         n_low_flagged = sum(q_subset=="low" & str_detect(SEACAR_QAQCFlagCode, low_flag_code))), 
+                                         n_low_flagged = sum(str_detect(SEACAR_QAQCFlagCode, low_flag_code))), 
                                        by = list(ParameterName, habitat)]
   }
   
@@ -432,9 +435,6 @@ check_flag <- function(h, qtype="quantile"){
   }
   
   if(nrow(unflagged_display)>0){
-    cat("  \n")
-    cat("Entries where ResultValue is above or below quantile, but expected SEACAR_QAQCFlagCode is not being applied")
-    cat("  \n")
     
     names(unflagged_display) <- gsub("_", " ", names(unflagged_display))
     
@@ -444,6 +444,9 @@ check_flag <- function(h, qtype="quantile"){
                                        table_caption = "SEACAR QAQC Flag Code discrepancies",
                                        format = "latex")
     if(h=="Species"){
+      cat("  \n")
+      cat("Entries where ResultValue is above or below quantile, but expected SEACAR_QAQCFlagCode is not being applied")
+      cat("  \n")
       print(unflag_display_table)
     }
     
@@ -461,6 +464,14 @@ for(i in 1:length(habitats)){
     cat("\\newpage")
   } else {
     cat("# QAQC Flag Check")
+    cat("  \n")
+    cat(paste0("* n_high is the amount of data above the quantile value.   \n * n_high_flagged is the amount of data above the quantile value AND containing proper SEACARQAQCFlag of 17Q (ResultValue above quantile value)."))
+    cat("  \n")
+    cat(paste0("* n_low is the amount of data below the quantile value.   \n * n_low_flagged is the amount of data below the quantile value AND containing proper SEACARQAQCFlag of 16Q (ResultValue below quantile value)."))
+    cat("  \n")
+    cat("* If everything is in order, these values should be the same. Any discrepancies therein should be fastidiously noted.")
+    cat("  \n")
+    cat("* Flagcodes for **Threshold** checks: *2Q* & *4Q*")
     cat("  \n")
   }
   
