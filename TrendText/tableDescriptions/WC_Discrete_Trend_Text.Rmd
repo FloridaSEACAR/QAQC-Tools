@@ -7,6 +7,7 @@ output:
 library(data.table)
 library(dplyr)
 library(glue)
+library(stringr)
 library(rstudioapi)
 
 checkWCTrends <- function(p, SennSlope){
@@ -49,19 +50,31 @@ intro_options_disc <- function(param, managed_area){
   sample(c(
     paste0("This table outlines a key observation related to ", param, " levels in the ", managed_area, "."),
     paste0("Here, we present the analysis of ", param, " trends at the ", managed_area, "."),
-    paste0("The following table highlights the significant trends in ", param, " within the ", managed_area, "."),
-    paste0("The data reveals notable changes in ", param, " in the ", managed_area, " over the study period.")
+    paste0("The following table highlights trends in ", param, " within the ", managed_area, "."),
+    paste0("The analysis here tests for changes in ", param, " in the ", managed_area, " over the study period.")
   ),1)
 }
 
 # Trend-based snippet options with variety
 trend_snippets <- function(trend, parameter, period, sample_count){
-  c(
-  paste0("The data indicate a ", trend, " in ", parameter, " from ", period, ", based on the analysis of ", sample_count, " samples. "),
-  paste0("An analysis over ", period, " revealed a ", trend, " in ", parameter, " levels, with", sample_count, " samples contributing to this finding. "),
-  paste0("Over the course of ", period, ", a ", trend, " was detected in ", parameter, ", supported by ", sample_count, " samples. "),
-  paste0("A clear ", trend, " in ", parameter, " was observed from ", period, ", according to data from ", sample_count, " samples. ")
-  )
+  sample_count <- prettyNum(sample_count, big.mark = ",", scientific=FALSE)
+  trend <- tolower(trend)
+  
+  if(trend=="no significant trend"){
+    c(
+      paste0("The data indicate ", trend, " in ", parameter, " from ", period, ", based on the analysis of ", sample_count, " samples. "),
+      paste0("An analysis over ", period, " revealed ", trend, " in ", parameter, " levels, with ", sample_count, " samples contributing to this finding. "),
+      paste0("Over the course of ", period, ", ", trend, " was detected in ", parameter, ", supported by ", sample_count, " samples. "),
+      paste0("There was ", trend, " in ", parameter, " from ", period, ", according to data from ", sample_count, " samples. ")
+    )
+  } else {
+    c(
+      paste0("The data indicate a ", trend, " in ", parameter, " from ", period, ", based on the analysis of ", sample_count, " samples. "),
+      paste0("An analysis over ", period, " revealed a ", trend, " in ", parameter, " levels, with ", sample_count, " samples contributing to this finding. "),
+      paste0("Over the course of ", period, ", a ", trend, " was detected in ", parameter, ", supported by ", sample_count, " samples. "),
+      paste0("A clear ", trend, " in ", parameter, " was observed from ", period, ", according to data from ", sample_count, " samples. ")
+    )
+  }
 }
 
 generate_description <- function(managed_area, parameter, trend, sample_count, years_with_data, period) {
@@ -99,7 +112,6 @@ for(ma in unique(data$ManagedAreaName)){
     cat(description)
     cat("  \n")
   }
-  
 }
 
 ```
