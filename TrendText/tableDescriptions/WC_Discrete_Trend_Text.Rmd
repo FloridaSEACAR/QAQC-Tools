@@ -1,0 +1,105 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r file_import, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(dplyr)
+library(glue)
+library(rstudioapi)
+
+checkWCTrends <- function(p, SennSlope){
+  increasing <- SennSlope > 0
+  trendPresent <- p < 0.05
+  trendStatus <- "No significant trend"
+  if(trendPresent){
+    trendStatus <- ifelse(increasing, "Significantly increasing trend", "Significantly decreasing trend")
+  }          
+  return(trendStatus)
+}
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+wd <- dirname(getActiveDocumentContext()$path)
+setwd(wd)
+
+discrete <- fread("data/WQ_Discrete_All_KendallTau_Stats.txt", sep="|", na.strings="NA")
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+# Merge websiteParams into discrete to determine which entries to generate text for
+# Also "Indicator"
+discrete <- merge(discrete, websiteParams[SamplingFrequency=="Discrete",-"ParameterShort"],
+                  by=c("ParameterName","ActivityType","RelativeDepth","Website"), all=T)
+
+data <- discrete[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+data <- data[!is.na(Trend) & Website==1, ] %>% rowwise() %>%
+  mutate(StatisticalTrend = checkWCTrends(p, SennSlope))
+setDT(data)
+
+
+```
+
+
+
+```{r functions}
+
+# Introductory snippets based on indicator
+intro_options_disc <- function(param, managed_area){
+  sample(c(
+    paste0("This table outlines a key observation related to ", param, " levels in the ", managed_area, "."),
+    paste0("Here, we present the analysis of ", param, " trends at the ", managed_area, "."),
+    paste0("The following table highlights the significant trends in ", param, " within the ", managed_area, "."),
+    paste0("The data reveals notable changes in ", param, " in the ", managed_area, " over the study period.")
+  ),1)
+}
+
+# Trend-based snippet options with variety
+trend_snippets <- function(trend, parameter, period, sample_count){
+  c(
+  paste0("The data indicate a ", trend, " in ", parameter, " from ", period, ", based on the analysis of ", sample_count, " samples. "),
+  paste0("An analysis over ", period, " revealed a ", trend, " in ", parameter, " levels, with", sample_count, " samples contributing to this finding. "),
+  paste0("Over the course of ", period, ", a ", trend, " was detected in ", parameter, ", supported by ", sample_count, " samples. "),
+  paste0("A clear ", trend, " in ", parameter, " was observed from ", period, ", according to data from ", sample_count, " samples. ")
+  )
+}
+
+generate_description <- function(managed_area, parameter, trend, sample_count, years_with_data, period) {
+  
+  # Select a random introductory snippet and trend snippet
+  description <- intro_options_disc(parameter, managed_area)
+  description <- paste(description, sample(trend_snippets(trend, parameter, period, sample_count), 1))
+  
+  return(description)
+}
+
+```
+
+
+
+```{r results='asis'}
+
+# Generate and display descriptions for each indicator
+for(ma in unique(data$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  for(param in unique(data[ManagedAreaName==ma, ]$ParameterName)){
+    filtered_data <- data[ManagedAreaName==ma & ParameterName==param, ]
+    cat("  \n")
+    cat(glue("## {param}"))
+    cat("  \n")
+    
+    # Generate and display the description
+    description <- generate_description(ma, param, filtered_data$StatisticalTrend,
+                                        filtered_data$N_Data, filtered_data$N_Years,
+                                        filtered_data$Period)
+    cat("  \n")
+    cat(description)
+    cat("  \n")
+  }
+  
+}
+
+```
