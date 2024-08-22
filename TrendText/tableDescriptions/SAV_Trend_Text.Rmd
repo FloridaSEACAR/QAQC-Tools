@@ -1,7 +1,6 @@
 ---
-title: "SAV Trend Text"
-author: "Loeb et al., 2024"
 output:
+  word_document: default
   html_document:
     df_print: paged
 ---
@@ -9,10 +8,11 @@ output:
 ```{r, warning = FALSE, echo = FALSE, message = FALSE}
 library(data.table)
 library(stringr)
+library(glue)
 
 knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
 
-sav_lme <- fread("SAV_BBpct_LMEresults_All.txt")
+sav_lme <- fread("data/SAV_BBpct_LMEresults_All.txt")
 
 # Re-create "Period" column
 sav_lme <- sav_lme[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
@@ -220,7 +220,7 @@ generate_description <- function(ma){
 ```{r, results='asis'}
 
 for(ma in unique(sav_lme$ManagedAreaName)){
-  cat(paste0("**",ma,"**"))
+  cat(glue("# {ma}"))
   cat("  \n")
   # Generate and display the description
   description <- generate_description(ma)
