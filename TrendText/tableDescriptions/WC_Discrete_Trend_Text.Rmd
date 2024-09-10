@@ -1,0 +1,162 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r file_import, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(dplyr)
+library(glue)
+library(stringr)
+library(rstudioapi)
+library(openxlsx)
+
+# Apply text trend designations, convert from numeric
+checkWCTrends <- function(p, SennSlope){
+  increasing <- SennSlope > 0
+  trendPresent <- p < 0.05
+  trendStatus <- "No significant trend"
+  if(trendPresent){
+    trendStatus <- ifelse(increasing, "Significantly increasing trend", "Significantly decreasing trend")
+  }          
+  return(trendStatus)
+}
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+wd <- dirname(getActiveDocumentContext()$path)
+setwd(wd)
+
+# Bring in discrete KendallTau results
+discrete <- fread("data/WQ_Discrete_All_KendallTau_Stats.txt", sep="|", na.strings="NA")
+# Bring in websiteparameters file for "Website" column, may not be needed
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+# Pull in individual tabs from TableDesc-Context-Snippets worksheet
+paramSnippets <- setDT(read.xlsx("data/TableDesc-Context-Snippets.xlsx", sheet = 1))
+maSnippets <- setDT(read.xlsx("data/TableDesc-Context-Snippets.xlsx", sheet = 2))
+
+# Merge websiteParams into discrete to determine which entries to generate text for
+# Also "Indicator" if needed later
+discrete <- merge(discrete, websiteParams[SamplingFrequency=="Discrete",-"ParameterShort"],
+                  by=c("ParameterName","ActivityType","RelativeDepth","Website"), all=T)
+
+# Generate "Period of Record" column
+data <- discrete[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+# Apply trend text function
+data <- data[!is.na(Trend) & Website==1, ] %>% rowwise() %>%
+  mutate(StatisticalTrend = checkWCTrends(p, SennSlope))
+setDT(data)
+
+
+```
+
+
+
+```{r functions}
+comma <- function(val){prettyNum(val, big.mark = ",", scientific=FALSE)}
+
+# Introductory snippets based on indicator
+intro_options_disc <- function(param, managed_area){
+  sample(c(
+    paste0("This table outlines a key observation related to ", param, " levels in the ", managed_area, "."),
+    paste0("Presented here is the result for ", param, " trends at the ", managed_area, "."),
+    paste0("The following table highlights trends in ", param, " within the ", managed_area, "."),
+    paste0("The analysis here tests for changes in ", param, " in the ", managed_area, " over the study period.")
+  ),1)
+}
+
+# Trend-based snippet options with variety
+trend_snippets <- function(trend, parameter, period, sample_count){
+  sample_count <- comma(sample_count)
+  trend <- tolower(trend)
+  
+  if(trend=="no significant trend"){
+    snip <- c(
+      paste0("The data indicate ", trend, " in ", parameter, " from ", period, 
+             ", based on the analysis of ", sample_count, " samples. "),
+      paste0("An analysis over ", period, " revealed ", trend, " in ", parameter, 
+             " levels, with ", sample_count, " samples contributing to this finding. "),
+      paste0("Over the course of ", period, ", ", trend, " was detected in ", 
+             parameter, ", supported by ", sample_count, " samples. "),
+      paste0("There was ", trend, " in ", parameter, " from ", period, 
+             ", according to data from ", sample_count, " samples. ")
+    )
+  } else {
+    snip <- c(
+      paste0("The data indicate a ", trend, " in ", parameter, " from ", period, 
+             ", based on the analysis of ", sample_count, " samples. "),
+      paste0("An analysis over ", period, " revealed a ", trend, " in ", parameter, 
+             " levels, with ", sample_count, " samples contributing to this finding. "),
+      paste0("Over the course of ", period, ", a ", trend, " was detected in ", 
+             parameter, ", supported by ", sample_count, " samples. "),
+      paste0("A ", trend, " in ", parameter, " was observed from ", period, 
+             ", according to data from ", sample_count, " samples. ")
+    )
+  }
+  return(paste(sample(snip,1)))
+}
+
+# Unique parameter-based snippets
+paramContextSnippets <- function(param){
+  snippets <- paramSnippets[Parameter==param, contextSnippet]
+  sample(snippets,1)
+}
+
+maContextSnippets <- function(managed_area){
+  snippets <- maSnippets[ManagedAreaName==managed_area, contextSnippet]
+  return(snippets)
+}
+
+generate_description <- function(managed_area, parameter, trend, sample_count, period, ma_intro) {
+  
+  # Compile individual snippets together
+  description <- paste(
+    ma_intro,
+    intro_options_disc(parameter, managed_area),
+    paramContextSnippets(parameter),
+    trend_snippets(trend, parameter, period, sample_count)
+  )
+  
+  return(description)
+}
+
+```
+
+
+
+```{r results='asis'}
+
+# Generate and display descriptions for each indicator
+for(ma in c("Alligator Harbor Aquatic Preserve","Apalachicola Bay Aquatic Preserve","Big Bend Seagrasses Aquatic Preserve")){
+# for(ma in unique(data$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  used_intros <- c()
+  ma_intros <- maContextSnippets(ma)
+  
+  for(param in unique(data[ManagedAreaName==ma, ]$ParameterName)){
+    filtered_data <- data[ManagedAreaName==ma & ParameterName==param, ]
+    cat("  \n")
+    cat(glue("## {param}"))
+    cat("  \n")
+    
+    # Add MA-specific context to the first params of each indicator
+    if(param %in% c("Total Nitrogen", "Dissolved Oxygen", "Turbidity")){
+      ma_intro <- sample(ma_intros[!ma_intros %in% used_intros], 1)
+      used_intros <- c(used_intros, ma_intro)
+    } else {ma_intro <- ""}
+    
+    # Generate and display the description
+    description <- generate_description(ma, param, filtered_data$StatisticalTrend,
+                                        filtered_data$N_Data,
+                                        filtered_data$Period, ma_intro)
+    cat("  \n")
+    cat(description)
+    cat("  \n")
+  }
+}
+
+```

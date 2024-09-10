@@ -1,0 +1,192 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+```{r file_import, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(dplyr)
+library(glue)
+library(stringr)
+library(english)
+library(rstudioapi)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+wd <- dirname(getActiveDocumentContext()$path)
+setwd(wd)
+
+cont_data <- fread("data/WQ_Continuous_All_KendallTau_Stats.txt", sep='|')
+
+checkWCTrends <- function(p, SennSlope){
+  increasing <- SennSlope > 0
+  trendPresent <- p < 0.05
+  trendStatus <- "No significant trend"
+  if(trendPresent){
+    trendStatus <- ifelse(increasing, "Significantly increasing trend", "Significantly decreasing trend")
+  }          
+  return(trendStatus)
+}
+
+data <- cont_data[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+data <- data[!is.na(Trend) & Website==1, ] %>% rowwise() %>%
+  mutate(StatisticalTrend = checkWCTrends(p, SennSlope))
+setDT(data)
+
+
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+```
+
+
+
+```{r functions}
+
+comma <- function(val){prettyNum(val, big.mark = ",", scientific=FALSE)}
+
+# Introductory snippets based on parameter
+intro_options_cont <- function(managed_area, program_location, param){
+  c(
+    paste0("This table outlines a key observation related to ", param, " levels in the ", managed_area, ", specifically at the ", program_location, " location. "),
+    paste0("Presented here are the results of the analyses of ", param, " trends at the ", managed_area, ", focusing on the ", program_location, " location. "),
+    paste0("The following table highlights the significant trends in ", param, " within the ", managed_area, ", as observed at the ", program_location, " location. "),
+    paste0("The data reveals notable changes in ", param, " at the ", program_location, " location in the ", managed_area, " over the study period. ")
+  )
+}
+
+# Trend-based snippet options with variety, including median result value
+trend_snippets <- function(trend, parameter, period_of_record, sample_count, median_result_value){
+  sample_count <- comma(sample_count)
+  trend <- tolower(trend)
+  units <- websiteParams[SamplingFrequency=="Continuous" & ParameterName==parameter, ParameterUnits]
+  units <- ifelse(!units %in% c("%", "ppt"), paste0(" ", units), "%")
+  
+  c(
+    paste0("The data indicate a ", trend, " in ", parameter, " from ", period_of_record, 
+           ", based on the analysis of ", sample_count, " samples. The median result value during this period was ", 
+           median_result_value, units, "."),
+    paste0("An analysis over ", period_of_record, " revealed a ", trend, " in ", 
+           parameter, " levels, with ", sample_count, " samples contributing to this finding. The median value recorded was ", 
+           median_result_value, units, "."),
+    paste0("Over the course of ", period_of_record, ", a ", trend, 
+           " was detected in ", parameter, ", supported by ", sample_count, 
+           " samples, with a median value of ", median_result_value, units, "."),
+    paste0("A ", trend, " in ", parameter, " was observed from ", period_of_record, 
+           ", according to data from ", sample_count, " samples. The median result value noted was ", 
+           median_result_value, units, ".")
+  )
+}
+
+generate_description <- function(managed_area, parameter, trend, sample_count, years_with_data, period_of_record, program_location, median_result_value) {
+  
+  # Select a random introductory snippet and trend snippet
+  description <- sample(intro_options_cont(managed_area, program_location, param), 1)
+  description <- paste(description, sample(
+    trend_snippets(trend, parameter, period_of_record, sample_count, median_result_value), 
+    1))
+  
+  return(description)
+  
+}
+
+
+```
+
+
+```{r test_functions}
+
+test_snippet <- function(num_programs, list_programs, param, ma, num_years){
+  if(num_programs>1){
+    paste0("There are ", num_programs, " programs reporting data for ", 
+           param, " in ", ma, ": ", list_programs, ". ")
+  }
+}
+
+comma <- function(val){prettyNum(val, big.mark = ",", scientific=FALSE)}
+
+test_snippet2 <- function(filtered_data, trend, parameter){
+  
+  filtered_trend_data <- filtered_data[StatisticalTrend==trend, ]
+  num_stations <- length(unique(filtered_trend_data$ProgramLocationID))
+  ns <- as.character(english(num_stations))
+  list_stations <- paste(unique(filtered_trend_data$ProgramLocationID), collapse = ", ")
+  num_samples <- sum(filtered_trend_data$N_Data)
+  mean_num_samples <- mean(filtered_trend_data$N_Data)
+  median_val <- mean(filtered_trend_data$Median)
+  units <- websiteParams[SamplingFrequency=="Continuous" & ParameterName==parameter, ParameterUnits]
+  units <- ifelse(!units %in% c("%", "ppt"), paste0(" ", units), "%")
+  
+  if(num_stations > 0){
+    if(!trend=="No significant trend"){
+      # Significant trends
+      tense <- ifelse(num_stations==1, paste0("There is ", ns, " station "), paste0("There are ", ns, " stations "))
+      paste0(tense, "with ", tolower(trend), "s: ",
+             list_stations, ". These ", ns, " stations have a combined sample count of ", 
+             comma(num_samples), " samples, with an average of ", comma(round(mean_num_samples)), 
+             " samples per location. The average median result value for all stations is ", round(median_val,1), units, ".")
+    } else {
+      # Non-significant trends
+      ifelse(
+        num_stations==1, 
+        paste0("There is ", ns, " station with ", tolower(trend), ": ",
+             list_stations, "."), 
+        paste0("There are ", ns, " stations with ", tolower(trend), "s: ",
+             list_stations, ".")
+      )
+    }
+  }
+}
+
+```
+
+
+
+```{r results='asis'}
+
+# Generate and display descriptions for each indicator
+for(ma in unique(data$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  for(param in unique(data[ManagedAreaName==ma, ]$ParameterName)){
+    filtered_data <- data[ManagedAreaName==ma & ParameterName==param, ]
+    
+    cat("  \n")
+    cat(glue("## {param}"))
+    cat("  \n")
+    
+    # Testing alternate description
+    # Grab necessary variables
+    num_programs <- length(unique(filtered_data$ProgramID))
+    list_programs <- paste(unique(filtered_data$ProgramName), collapse = ", ")
+    num_years <- max(filtered_data$LatestYear) - min(filtered_data$EarliestYear)
+    
+    # Text for available trends
+    available_trends <- unique(filtered_data$StatisticalTrend)
+    
+    trend_text <- c()
+    for(trend in available_trends){
+      trend_text <- c(trend_text, test_snippet2(filtered_data, trend, param))
+    }
+    
+    description <- paste(
+      paste0("The table below summarizes the results of analyses of ", param," over a ", num_years, "-year span. "),
+      test_snippet(num_programs, list_programs, param, ma, num_years),
+      trend_text
+    )
+    
+    
+    # Generate and display the description
+    # description <- generate_description(ma, param, filtered_data$StatisticalTrend,
+    #                                     filtered_data$N_Data, filtered_data$N_Years,
+    #                                     filtered_data$Period, filtered_data$ProgramLocationID,
+    #                                     filtered_data$Median)
+    cat("  \n")
+    cat(description)
+    cat("  \n")
+  }
+}
+
+```
+

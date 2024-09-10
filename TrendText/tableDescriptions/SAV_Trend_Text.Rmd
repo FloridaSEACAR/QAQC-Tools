@@ -1,0 +1,233 @@
+---
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(glue)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+sav_lme <- fread("data/SAV_BBpct_LMEresults_All.txt")
+
+# Re-create "Period" column
+sav_lme <- sav_lme[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+sav_lme <- sav_lme[!Species=="No grass In Quadrat", ]
+
+# Lower-case species names, exception for acronym SAV
+sav_lme[Species!="Total SAV", `:=` (Species = tolower(Species))]
+sav_lme[Species=="Total SAV", `:=` (Species = "total SAV")]
+
+```
+
+
+
+```{r}
+
+# Introductory snippet options
+
+intro_options <- function(ma){
+  intro <- c(
+    paste0("This table presents the statistical analysis of trends for various seagrass species and drift algae in the ", ma, " based on percent cover. "), 
+    paste0("The table below summarizes the trends observed in different seagrass species and drift algae in the ", ma, " based on percent cover. "),
+    paste0("This table provides a detailed overview of the trends in seagrass species and drift algae in the ", ma, " based on percent cover. ")
+  )
+  return(intro)
+}
+
+# Decreasing trend snippet options
+
+decreasing_trend_explanation_options <- c( 
+  
+  "exhibited significant declines, reflecting a downward trend from", 
+  
+  "showed a marked decrease, indicating a declining trend from", 
+  
+  "demonstrated a significant drop, pointing to a downward trajectory from" 
+  
+)
+
+# Increasing trend snippet options
+
+increasing_trend_explanation_options <- c( 
+  
+  "showed a significant increase over the period from", 
+  
+  "exhibited a marked increase during the time frame from", 
+  
+  "demonstrated a notable upward trend from" 
+  
+)
+
+# Insufficient data snippet options
+
+insufficient_data_options <- c( 
+  
+  "The analysis indicates that there wasn’t enough data to determine trends for",
+  
+  "Results suggest that the data was insufficient to identify any trends for",
+  
+  "The data available was not adequate to establish trends for"
+  
+)
+
+# No significant trend snippet options
+
+no_significant_trend_options <- c( 
+  
+  "showed no significant changes, suggesting their populations remained relatively stable over the study period.", 
+  
+  "exhibited no notable variations, indicating consistent populations throughout the observed time frame.", 
+  
+  "did not display significant fluctuations, implying that their populations were steady during the study period." 
+  
+)
+
+# Model did not fit snippet options
+
+model_not_fit_options <- c( 
+  
+  "Regarding Halophila and Star grass, the model did not fit the data well enough to assess any trends.", 
+  
+  "For Halophila and Star grass, the model did not align with the data, making it impossible to evaluate trends.", 
+  
+  "The model did not fit the available data for Halophila and Star grass, preventing trend analysis."
+  
+)
+
+
+```
+
+
+```{r functions}
+library(gtools)
+
+# Function to create a formatted string with an Oxford comma
+oxford_comma <- function(species, type = "species") {
+  if (length(species) == 1) {
+    return(species)
+  } else if (length(species) == 2) {
+    if(type=="timerange"){
+      return(paste(species, collapse = ", and "))
+    } else {
+      return(paste(species, collapse = " and "))
+    }
+  } else {
+    return(paste(paste(species[-length(species)], collapse = ", "), species[length(species)], sep = ", and "))
+  }
+}
+
+# Function to apply oxford_comma function, select 1 grouping
+species_ordering <- function(species_list){
+  # Generate permutations of the species vector
+  permutations <- gtools::permutations(n = length(species_list), r = length(species_list), v = species_list)
+  
+  # Apply the Oxford comma formatting function to each permutation
+  formatted_species <- apply(permutations, 1, oxford_comma)
+  
+  # View the result
+  return(sample(formatted_species,1))
+}
+
+# Function that groups unique timeranges and their species
+timeRangeText <- function(filtered_sav, type){
+  # Declare which snippets to use
+  text_options <- ifelse(type=="decreasing", 
+                         sample(decreasing_trend_explanation_options,1), 
+                         sample(increasing_trend_explanation_options,1))
+  
+  species <- filtered_sav[str_detect(StatisticalTrend, type), Species]
+  
+  # Determine number of unique "time periods" and account for them
+  species_timeline <- filtered_sav[str_detect(StatisticalTrend, type), c("Species","Period")]
+  
+  # Create combination text statements detailing which species over which times
+  combined_text <- c()
+  for(p in unique(species_timeline$Period)){
+    sp <- species_timeline[Period==p, Species]
+    yr <- gsub(" - "," to ", p) # Convert "2002 - 2022" to "2002 to 2022"
+    
+    # combined_text <- c(combined_text, paste(yr, "for", species_ordering(sp)))
+    
+    if(length(sp==1) & length(unique(species_timeline$Period))<=1){
+      combined_text <- c(combined_text, paste(yr))
+    } else {
+      combined_text <- c(combined_text, paste(yr, "for", species_ordering(sp)))
+    }
+  }
+  
+  # Order species list for beginning of sentence
+  species_text <- species_ordering(species)
+  
+  # Combine species, their explanations, and the timerange information
+  text_statement <- paste0(
+    species_text, " ",
+    text_options, " ",
+    oxford_comma(combined_text, type="timerange"), "."
+  )
+  return(str_to_sentence(text_statement))
+}
+
+# Description generation
+generate_description <- function(ma){
+  filtered_sav <- sav_lme[ManagedAreaName==ma, c("ManagedAreaName", "Species", "N_Years",
+                                                 "EarliestYear", "LatestYear", "Period",
+                                                 "StatisticalTrend")]
+  
+  if(any(filtered_sav$StatisticalTrend=="Insufficient data to calculate trend")){
+    insufficient_species <- filtered_sav[StatisticalTrend == "Insufficient data to calculate trend", Species]
+    insufficient_species_text <- species_ordering(insufficient_species)
+    insufficient_text <- paste0(sample(insufficient_data_options,1), " ", insufficient_species_text,".")
+  } else {insufficient_text<-""}
+  
+  if(any(filtered_sav$StatisticalTrend=="No significant trend")){
+    no_significant_species <- filtered_sav[StatisticalTrend == "No significant trend", Species]
+    no_significant_species_text <- species_ordering(no_significant_species)
+    no_significant_text <- str_to_sentence(paste(no_significant_species_text, sample(no_significant_trend_options,1)))
+  } else {no_significant_text<-""}
+  
+  if(any(filtered_sav$StatisticalTrend=="Significantly decreasing trend")){
+    decreasing_text <- timeRangeText(filtered_sav, "decreasing")
+  } else {decreasing_text<-""}
+  
+  if(any(filtered_sav$StatisticalTrend=="Significantly increasing trend")){
+    increasing_text <- timeRangeText(filtered_sav, "increasing")
+  } else {increasing_text <- ""}
+  
+  description <- paste(
+    sample(intro_options(ma), 1),
+    decreasing_text,
+    increasing_text,
+    insufficient_text,
+    no_significant_text
+  )
+  
+  return(description)
+  
+}
+
+
+```
+
+
+
+
+
+```{r, results='asis'}
+
+for(ma in unique(sav_lme$ManagedAreaName)){
+  cat(glue("# {ma}"))
+  cat("  \n")
+  # Generate and display the description
+  description <- generate_description(ma)
+  cat("  \n")
+  cat(description)
+  cat("  \n")
+}
+
+
+```
