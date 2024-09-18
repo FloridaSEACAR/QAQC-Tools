@@ -2,8 +2,6 @@ library(data.table)
 library(stringr)
 library(dplyr)
 library(tidyr)
-# library(dfCompare)
-# library(compareDF)
 library(arsenal)
 library(glue)
 library(ggplot2)
@@ -14,6 +12,7 @@ library(kableExtra)
 library(readxl)
 library(openxlsx)
 library(rstudioapi)
+library(tictoc)
 
 # Set working directory
 wd <- dirname(getActiveDocumentContext()$path)
@@ -29,10 +28,10 @@ source("../seacar_data_location.R")
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2024-Jun-06"
+old_file_date <- "2024-Jul-11"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
-old_files <- list.files((paste0(seacar_data_location,"archive/",old_file_date)), full.names = TRUE)
+old_files <- list.files((paste0(seacar_data_location,"/archive/",old_file_date)), full.names = TRUE)
 
 # discrete files
 wq_disc_files <- str_subset(str_subset(new_files, "Combined_WQ_WC_NUT_"), "_cont_", negate = TRUE)
@@ -55,9 +54,6 @@ show_flag_overview <- FALSE
 
 # Display file names in report (otherwise dates in summary table may be sufficient)
 file_name_display <- FALSE
-
-# Test variable to delete a column to check column comparison functionality
-# test_columns <- FALSE
 
 # Variable to show Column Differences in Export or not
 show_columns <- FALSE
@@ -143,25 +139,59 @@ compare_programs <- function(data_old, data_new, old_file_short, new_file_short,
 
 # Provide counts of data by program for each parameter
 program_counts <- function(data_old, data_new, habitat, param, quadsize="None"){
-
   if(!habitat=="Species"){
     program_count_table <- merge(
-      data_old %>% group_by(ProgramID) %>% summarise(nOld = n()),
-      data_new %>% group_by(ProgramID) %>% summarise(nNew = n())) %>%
+      data_old %>% 
+        group_by(ProgramID, ProgramName) %>% 
+        summarise(nOld = n(),
+                  LatestDateOld = substr(max(SampleDate), 1, 10)),
+      data_new %>% 
+        group_by(ProgramID, ProgramName) %>% 
+        summarise(nNew = n(),
+                  LatestDateNew = substr(max(SampleDate), 1, 10))) %>%
       mutate(difference = nNew - nOld)
     program_count_table$parameter <- param
   } else if(quadsize=="Yes"){
     program_count_table <- merge(
-      data_old %>% group_by(ProgramID, ParameterName, QuadSize_m2) %>% summarise(nOld = n()),
-      data_new %>% group_by(ProgramID, ParameterName, QuadSize_m2) %>% summarise(nNew = n())) %>%
+      data_old %>% 
+        group_by(ProgramID, ProgramName, ParameterName, QuadSize_m2) %>% 
+        summarise(nOld = n(),
+                  LatestDateOld = substr(max(SampleDate), 1, 10)),
+      data_new %>% 
+        group_by(ProgramID, ProgramName, ParameterName, QuadSize_m2) %>% 
+        summarise(nNew = n(),
+                  LatestDateNew = substr(max(SampleDate), 1, 10))) %>%
       mutate(difference = nNew - nOld)
   } else {
     program_count_table <- merge(
-      data_old %>% group_by(ProgramID, ParameterName) %>% summarise(nOld = n()),
-      data_new %>% group_by(ProgramID, ParameterName) %>% summarise(nNew = n())) %>%
+      data_old %>% 
+        group_by(ProgramID, ProgramName, ParameterName) %>% 
+        summarise(nOld = n(),
+                  LatestDateOld = substr(max(SampleDate), 1, 10)),
+      data_new %>% 
+        group_by(ProgramID, ProgramName, ParameterName) %>% 
+        summarise(nNew = n(),
+                  LatestDateNew = substr(max(SampleDate), 1, 10))) %>%
       mutate(difference = nNew - nOld)
   }
-  
+  # Apply abbreviations to ProgramName to reduce size within tables
+  # Also remove & from ProgramNames (thanks LaTeX)
+  program_count_table <- program_count_table %>%
+    mutate(ProgramName = case_when(
+      str_detect(ProgramName, "Aquatic Preserve Continuous Water Quality Monitoring") ~ 
+        str_replace(ProgramName, "Aquatic Preserve Continuous Water Quality Monitoring", "APCWQM"),
+      str_detect(ProgramName, "Aquatic Preserves Continuous Water Quality Monitoring") ~ 
+        str_replace(ProgramName, "Aquatic Preserves Continuous Water Quality Monitoring", "APCWQM"),
+      str_detect(ProgramName, "Water Management District Continuous Water Quality Programs") ~ 
+        str_replace(ProgramName, "Water Management District Continuous Water Quality Programs", "WMD CWQP"),
+      str_detect(ProgramName, "Water Quality Monitoring Program") ~ 
+        str_replace(ProgramName, "Water Quality Monitoring Program", "WQMP"),
+      str_detect(ProgramName, "National Estuarine Research Reserve System-Wide Monitoring Program") ~ 
+        str_replace(ProgramName, "National Estuarine Research Reserve System-Wide Monitoring Program", "NERR SWMP"),
+      str_detect(ProgramName, " & ") ~ 
+        str_replace(ProgramName, " & ", " and "),
+      TRUE ~ ProgramName  # Keep other programs unchanged
+    ))
   return(program_count_table)
 }
 
@@ -259,9 +289,11 @@ flag_overview <- function(data_new, return = "wide"){
 ## Import database thresholds
 ## Latest file available at:
 ## https://github.com/FloridaSEACAR/IndicatorQuantiles/blob/main/output/ScriptResults/Database_Thresholds.xlsx
-
-db_thresholds <- read_xlsx("data/Database_Thresholds.xlsx", skip=2)
-
+# Date of thresholds file to use (this should reflect the same file USF used)
+# i.e. the previous iteration of Database_Thresholds
+thresh_date <- "20240813"
+db_threshold_file <- paste0("Database_Thresholds_", thresh_date, ".xlsx")
+db_thresholds <- read_xlsx(paste0("../../IndicatorQuantiles/output/ScriptResults/", db_threshold_file), skip=6)
 db_thresholds <- db_thresholds %>% 
   filter(!IndicatorName=="Acreage") %>%
   select(ThresholdID, ParameterID, ParameterName, Habitat, CombinedTable, 
@@ -271,9 +303,10 @@ setDT(db_thresholds)
 
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
-# habitats <- c("Discrete")
+# habitats <- c("Continuous")
 
 # Begin Discrete processing
+tic()
 if("Discrete" %in% habitats){
   habitat <- "Discrete WQ"
   comparison_table <- data.table()
@@ -389,17 +422,21 @@ if("Discrete" %in% habitats){
   data_directory[[habitat]][["comparison_table"]] <- comparison_table
   data_directory[[habitat]][["program_count_table"]] <- program_count_table
 }
+toc()
 
 # Begin Continuous processing
+tic()
 if("Continuous" %in% habitats){
   habitat <- "Continuous WQ"
   comparison_table <- data.table()
   program_count_table <- data.table()
   
-  cont_params <- c("Dissolved_Oxygen","Dissolved_Oxygen_Saturation","pH", 
+  cont_params <- c("Dissolved_Oxygen","Dissolved_Oxygen_Saturation","pH",
                    "Salinity", "Turbidity", "Water_Temperature")
   
   for (p in cont_params){
+    data_old_combined <- data.table()
+    data_new_combined <- data.table()
     for (region in c("_NW","_NE","_SW","_SE")){
       par_reg_pattern <- paste0(p, region)
       region_files <- str_subset(wq_cont_files, par_reg_pattern)
@@ -424,6 +461,10 @@ if("Continuous" %in% habitats){
         data_old <- fread(old_file, sep='|', na.strings = "NULL")
         data_old <- data_old[MADup==1, ]
         
+        # Combine data by parameter for all regions
+        data_old_combined <- bind_rows(data_old_combined, data_old)
+        data_new_combined <- bind_rows(data_new_combined, data_new)
+        
         # Full ParameterName for a given file
         param <- data_new[, unique(ParameterName)]
         
@@ -444,46 +485,46 @@ if("Continuous" %in% habitats){
         data_table[ , `:=` (pctChange = round((difference / nDataOld)*100,2))]
         
         comparison_table <- bind_rows(comparison_table, data_table)
-        
-        ##### Comparison checks #### ----
-        ## The following are intended to check for inconsistencies between data exports
-        
-        ### Compare columns and class types
-        ## If they have different number of columns, list them in table below
-        data_directory[[habitat]][["column_compare"]][[param]] <- compare_columns(
-          data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
-        
-        ### Compare programs between exports
-        ## If they have different lengths, record which programs are included/not included
-        data_directory[[habitat]][["program_compare"]][[param]] <- compare_programs(
-          data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
-        
-        ### Provide counts of data by program by parameter
-        program_count_table <- bind_rows(program_count_table, program_counts(
-          data_old[Include==1, ], data_new[Include==1, ], habitat, param))
-        
-        ### Grab quantile data
-        data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new[Include==1, ], habitat, param, type="quantile")
-        
-        ### Grab threshold data
-        data_directory[[habitat]][["threshold"]][[param]] <- grab_quantiles(data_new, habitat, param, type="threshold")
-        
-        ### Provide overview of QAQC flags
-        data_directory[[habitat]][["flag_overview_wide"]][[param]] <- flag_overview(data_new[Include==1, ], return="wide")
-        
-        ### Grab values that fall outside of Expected values (15Q check)
-        data_directory[[habitat]][["fifteenQ"]][[param]] <- flag_overview(data_new[Include==1, ], return="fifteen")
-        
       }
     }
+    
+    ##### Comparison checks #### ----
+    ## The following are intended to check for inconsistencies between data exports
+    
+    ### Compare columns and class types
+    ## If they have different number of columns, list them in table below
+    data_directory[[habitat]][["column_compare"]][[param]] <- compare_columns(
+      data_old_combined[Include==1, ], data_new_combined[Include==1, ], old_file_short, new_file_short, habitat, param)
+    
+    ### Compare programs between exports
+    ## If they have different lengths, record which programs are included/not included
+    data_directory[[habitat]][["program_compare"]][[param]] <- compare_programs(
+      data_old_combined[Include==1, ], data_new_combined[Include==1, ], old_file_short, new_file_short, habitat, param)
+    
+    ### Provide counts of data by program by parameter
+    program_count_table <- bind_rows(program_count_table, program_counts(
+      data_old_combined[Include==1, ], data_new_combined[Include==1, ], habitat, param))
+    
+    ### Grab quantile data
+    data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new_combined[Include==1, ], habitat, param, type="quantile")
+    
+    ### Grab threshold data
+    data_directory[[habitat]][["threshold"]][[param]] <- grab_quantiles(data_new_combined, habitat, param, type="threshold")
+    
+    ### Provide overview of QAQC flags
+    data_directory[[habitat]][["flag_overview_wide"]][[param]] <- flag_overview(data_new_combined[Include==1, ], return="wide")
+    
+    ### Grab values that fall outside of Expected values (15Q check)
+    data_directory[[habitat]][["fifteenQ"]][[param]] <- flag_overview(data_new_combined[Include==1, ], return="fifteen")
+    
   }
-  
   data_directory[[habitat]][["comparison_table"]] <- comparison_table
   data_directory[[habitat]][["program_count_table"]] <- program_count_table
-  
 }
+toc()
 
 # Begin "Species" processing (SAV, Coral, Oyster, CW, Nekton)
+tic()
 if("Species" %in% habitats){
   comparison_table <- data.table()
   program_count_table <- data.table()
@@ -495,11 +536,8 @@ if("Species" %in% habitats){
     new_file_short <- tail(str_split(file, "/")[[1]],1)
     new_file_shorter <- str_split(paste(tail(str_split(str_split(new_file_short, "Parameters")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
     
-    # pattern to grab relevant "old" file
+    # pattern to grab relevant "old" file (pattern = habitat name)
     pattern <- str_split(str_split(new_file_short, "All_")[[1]][2], "_Parameters")[[1]][1]
-    # pattern is habitat name
-    # New format: Oyster -> OYSTER
-    pattern <- ifelse(pattern=="OYSTER", str_to_title(pattern), pattern)
     
     # Match habitat name with format of db_thresholds, i.e. CORAL to Coral
     habitat <- ifelse(pattern %in% c("CORAL","NEKTON"), str_to_title(pattern), pattern)
@@ -586,6 +624,7 @@ if("Species" %in% habitats){
   data_directory[["Species"]][["program_count_table"]] <- program_count_table
   
 }
+toc()
 
 file_out <- paste0("Comparison_Report_",gsub("-","",Sys.Date()))
 

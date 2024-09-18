@@ -26,9 +26,9 @@ make_kable <- function(data_table, table_caption, format="latex"){
         digits=2,
         vline = "",
         linesep = "",
-        longtable = T,
+        longtable = F,
         booktabs = T) %>%
-      kable_styling(latex_options = c("scale_down","HOLD_position"),
+      kable_styling(latex_options = c("scale_down","HOLD_position", "striped"),
                     position = "center") %>%
       row_spec(0, italic = TRUE)
     )
@@ -65,7 +65,7 @@ plot_vq_barplot <- function(vq_source){
 
 ```
 
-This document is intended to provide an overview of newly-exported Combined Tables.  
+This document is intended to provide an overview of newly exported Combined Tables.
 
 ```{r file name overview tables, results='asis', eval=TRUE}
 
@@ -472,6 +472,8 @@ for(i in 1:length(habitats)){
     cat("* If everything is in order, these values should be the same. Any discrepancies therein should be fastidiously noted.")
     cat("  \n")
     cat("* Flagcodes for **Threshold** checks: *2Q* & *4Q*")
+    cat("  \n")
+    cat(paste0("* Quantiles and Threshold checks have been compared with *", db_threshold_file, "*"))
     cat("  \n")
   }
   
