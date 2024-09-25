@@ -13,6 +13,7 @@ library(readxl)
 library(openxlsx)
 library(rstudioapi)
 library(tictoc)
+library(lubridate)
 
 # Set working directory
 wd <- dirname(getActiveDocumentContext()$path)
@@ -286,6 +287,35 @@ flag_overview <- function(data_new, return = "wide"){
   }
 }
 
+# Species Crosswalk check
+sp_crosswalk <- setDT(read_xlsx("data/SEACAR_Metadata.xlsx", sheet = "Mthd_SpeciesCrosswalk", skip=5))
+sp_crosswalk[is.na(sp_crosswalk)] <- "NULL"
+
+sp_match <- function(commonID, group1, group2, habitat){
+  match <- sp_crosswalk[CommonIdentifier==commonID & Group1==group1 & Group2==group2 & Habitat==habitat, ]
+  return(nrow(match)!=0)
+}
+
+check_species <- function(data_new, habitat){
+  species <- setDT(data_new %>% group_by(CommonIdentifier, SpeciesGroup1, SpeciesGroup2) %>% reframe())
+  species[is.na(species)] <- "NULL"
+  species$Habitat <- habitat
+  # Apply function
+  species <- setDT(
+    species %>% rowwise() %>% 
+      mutate(match = sp_match(CommonIdentifier, SpeciesGroup1, SpeciesGroup2, Habitat))
+  )
+  if(nrow(species[match==FALSE])>0){
+    print("At least 1 species mismatch detected")
+  } else {
+    print("no species mismatch")
+  }
+}
+
+# Function to check for Jan 1st Dates (DB will default to Jan 1st, helps to identify errors)
+# Apply to Discrete and "Species" only (not Continuous)
+jan_dates <- function(data_new){data_new[month(SampleDate) == 1 & day(SampleDate) == 1]}
+
 ## Import database thresholds
 ## Latest file available at:
 ## https://github.com/FloridaSEACAR/IndicatorQuantiles/blob/main/output/ScriptResults/Database_Thresholds.xlsx
@@ -384,6 +414,9 @@ if("Discrete" %in% habitats){
     
     ### Grab values that fall outside of Expected values (15Q check)
     data_directory[[habitat]][["fifteenQ"]][[param]] <- flag_overview(data_new[Include==1, ], return="fifteen")
+    
+    ### Collect Jan 1st values
+    data_directory[[habitat]][["jan_dates"]][[param]] <- jan_dates(data_new[Include==1, ])
     
     ### The following collects statistics about ValueQualifiers and includes them in the report
     if(collect_vq_data==TRUE){
@@ -540,7 +573,7 @@ if("Species" %in% habitats){
     pattern <- str_split(str_split(new_file_short, "All_")[[1]][2], "_Parameters")[[1]][1]
     
     # Match habitat name with format of db_thresholds, i.e. CORAL to Coral
-    habitat <- ifelse(pattern %in% c("CORAL","NEKTON"), str_to_title(pattern), pattern)
+    habitat <- ifelse(pattern %in% c("OYSTER","CORAL","NEKTON"), str_to_title(pattern), pattern)
     
     # Grab "old" export file, file_short
     old_file <- str_subset(old_hab_files, pattern)
@@ -618,6 +651,9 @@ if("Species" %in% habitats){
     
     ### Grab values that fall outside of Expected values (15Q check)
     data_directory[["Species"]][["fifteenQ"]][[habitat]] <- flag_overview(data_new[Include==1, ], return="fifteen")
+    
+    ### Collect Jan 1st values
+    data_directory[["Species"]][["jan_dates"]][[habitat]] <- jan_dates(data_new[Include==1, ])
   }
   
   data_directory[["Species"]][["comparison_table"]] <- comparison_table

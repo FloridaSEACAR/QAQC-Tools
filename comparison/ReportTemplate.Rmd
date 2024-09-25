@@ -129,7 +129,12 @@ for(i in 1:length(habitats)){
   #     select(-cell_color)
   # }
   
-  print(make_kable(comparison_table, paste0("Comparison of New vs. Old data exports - (",h,")")))
+  # Set caption
+  cap <- ifelse(h=="Species",
+                paste0("Comparison of New vs. Old data exports"), 
+                paste0("Comparison of New vs. Old data exports - (",h,")"))
+  
+  print(make_kable(comparison_table, cap))
   cat("  \n")
   
   ########################
@@ -341,6 +346,45 @@ for(i in 1:length(habitats)){
       }
     }
   }
+  
+  #####################
+  ### Jan 1st Dates ###
+  #####################
+  
+  if(h %in% c("Species", "Discrete WQ")){
+    # Filter out empty data frames and then combine them
+    non_empty_dfs <- Filter(function(df) nrow(df) > 0, data_directory[[h]][["jan_dates"]])
+    jan_dates <- bind_rows(non_empty_dfs)
+    
+    if(h=="Species"){
+      jan_dates_display <- jan_dates %>% 
+        group_by(Habitat, ProgramID, ParameterName) %>% 
+        reframe(n = n(),years = paste(sort(unique(Year)), collapse = ", "))
+    } else if(h=="Discrete WQ"){
+      jan_dates_display <- jan_dates %>% 
+        group_by(ProgramID, ParameterName) %>% 
+        reframe(n = n(),years = paste(sort(unique(Year)), collapse = ", "))
+    }
+    
+    cat("  \n")
+    cat("\\newpage")
+    cat("## January 1st Dates")
+    cat("  \n")
+    cat("Database defaults to January 1st dates when SampleDate is unavailable or incorrectly collected from raw data. 
+        A SampleDate of January 1st is not necessarily an error, but a large number of January 1st dates should be examined further. 
+        Continuous WQ is excluded from this analysis.")
+    cat("  \n")
+    print(
+      make_kable(
+        jan_dates_display, 
+        table_caption = "Summary of January 1st Dates", 
+        format = "latex"
+      )
+    )
+    cat("  \n")
+    
+  }
+  
 }
 
 ```
