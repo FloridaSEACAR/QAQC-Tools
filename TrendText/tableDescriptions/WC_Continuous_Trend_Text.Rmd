@@ -3,6 +3,7 @@ output:
   word_document: default
   html_document: default
 ---
+
 ```{r file_import, warning = FALSE, echo = FALSE, message = FALSE}
 library(data.table)
 library(dplyr)
@@ -10,6 +11,7 @@ library(glue)
 library(stringr)
 library(english)
 library(rstudioapi)
+library(openxlsx)
 
 knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
 
@@ -29,71 +31,149 @@ checkWCTrends <- function(p, SennSlope){
 }
 
 data <- cont_data[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
-data <- data[!is.na(Trend) & Website==1, ] %>% rowwise() %>%
-  mutate(StatisticalTrend = checkWCTrends(p, SennSlope))
+data <- data[Website==1, ] %>% rowwise() %>%
+  mutate(
+    StatisticalTrend = ifelse(!is.na(Trend), checkWCTrends(p, SennSlope), "Insufficient data")
+  )
 setDT(data)
-
 
 websiteParams <- fread("data/WebsiteParameters.csv")
 
+meanSlopeSnippets <- setDT(read.xlsx("data/TableDesc-Context-Snippets.xlsx", sheet = 5))
+
 ```
-
-
 
 ```{r functions}
 
 comma <- function(val){prettyNum(val, big.mark = ",", scientific=FALSE)}
 
-# Introductory snippets based on parameter
-intro_options_cont <- function(managed_area, program_location, param){
-  c(
-    paste0("This table outlines a key observation related to ", param, " levels in the ", managed_area, ", specifically at the ", program_location, " location. "),
-    paste0("Presented here are the results of the analyses of ", param, " trends at the ", managed_area, ", focusing on the ", program_location, " location. "),
-    paste0("The following table highlights the significant trends in ", param, " within the ", managed_area, ", as observed at the ", program_location, " location. "),
-    paste0("The data reveals notable changes in ", param, " at the ", program_location, " location in the ", managed_area, " over the study period. ")
-  )
-}
-
 # Trend-based snippet options with variety, including median result value
-trend_snippets <- function(trend, parameter, period_of_record, sample_count, median_result_value){
+trend_snippets <- function(trend, parameter, period, sample_count, median_result_value){
   sample_count <- comma(sample_count)
   trend <- tolower(trend)
   units <- websiteParams[SamplingFrequency=="Continuous" & ParameterName==parameter, ParameterUnits]
   units <- ifelse(!units %in% c("%", "ppt"), paste0(" ", units), "%")
   
   c(
-    paste0("The data indicate a ", trend, " in ", parameter, " from ", period_of_record, 
+    paste0("The data indicate a ", trend, " in ", parameter, " from ", period, 
            ", based on the analysis of ", sample_count, " samples. The median result value during this period was ", 
            median_result_value, units, "."),
-    paste0("An analysis over ", period_of_record, " revealed a ", trend, " in ", 
+    paste0("An analysis over ", period, " revealed a ", trend, " in ", 
            parameter, " levels, with ", sample_count, " samples contributing to this finding. The median value recorded was ", 
            median_result_value, units, "."),
-    paste0("Over the course of ", period_of_record, ", a ", trend, 
+    paste0("Over the course of ", period, ", a ", trend, 
            " was detected in ", parameter, ", supported by ", sample_count, 
            " samples, with a median value of ", median_result_value, units, "."),
-    paste0("A ", trend, " in ", parameter, " was observed from ", period_of_record, 
+    paste0("A ", trend, " in ", parameter, " was observed from ", period, 
            ", according to data from ", sample_count, " samples. The median result value noted was ", 
            median_result_value, units, ".")
   )
 }
 
-generate_description <- function(managed_area, parameter, trend, sample_count, years_with_data, period_of_record, program_location, median_result_value) {
+weighted_slope_snippets <- function(weighted_mean_sen_slope, param){
+  glue(sample(meanSlopeSnippets[,Snippet],1))
+}
+
+generate_description <- function(managed_area, parameter, trend, sample_count, years_with_data, 
+                                 period, program_location, median_result_value, weighted_mean_sen_slope) {
   
   # Select a random introductory snippet and trend snippet
-  description <- sample(intro_options_cont(managed_area, program_location, param), 1)
-  description <- paste(description, sample(
-    trend_snippets(trend, parameter, period_of_record, sample_count, median_result_value), 
-    1))
+  description <- ""
+  description <- paste(
+    description, 
+    sample(trend_snippets(trend, parameter, period, sample_count, median_result_value),1),
+    sample(weighted_slope_snippets(weighted_mean_sen_slope, parameter),1)
+  )
   
   return(description)
   
 }
 
+weighted_sum <- function(filtered_data){
+  
+  # Calculate the weighted sum of Sen Slopes
+  weighted_sum_sen_slope <- sum(filtered_data$N_Data * filtered_data$SennSlope)
+  
+  # Calculate the sum of the Sample Counts (weights)
+  sum_weights <- sum(filtered_data$N_Data)
+  
+  # Calculate the weighted mean Sen Slope
+  weighted_mean_sen_slope <- round(weighted_sum_sen_slope / sum_weights,3)*100
+  
+  # Print the weighted mean Sen Slope
+  return(paste0(weighted_mean_sen_slope, "%"))
+}
+
+
+```
+
+```{r generate_description, results='asis'}
+# Empty table to store results
+descriptionTable <- data.table()
+
+# Generate and display descriptions for each indicator
+# for(ma in unique(data$ManagedAreaName)){
+for(ma in c("Alligator Harbor Aquatic Preserve","Apalachicola Bay Aquatic Preserve","Big Bend Seagrasses Aquatic Preserve")){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  for(param in unique(data[ManagedAreaName==ma, ]$ParameterName)){
+    filtered_data <- data[ManagedAreaName==ma & ParameterName==param, ]
+    
+    # Number of stations in MA
+    num_stations <- english(length(unique(filtered_data$ProgramLocationID)))
+    # Number of significant stations
+    num_sig <- english(nrow(filtered_data[!is.na(Trend) & Trend!=0]))
+    # Number decreasing
+    num_dec <- english(nrow(filtered_data[Trend>0]))
+    # Number increasing
+    num_inc <- english(nrow(filtered_data[Trend<0]))
+    
+    cat("  \n")
+    cat(glue("## {param}"))
+    cat("  \n")
+    
+    weighted_mean_sen_slope <- weighted_sum(filtered_data[SufficientData==TRUE,])
+    
+    # Generate and display the description
+    description <- generate_description(ma, param, filtered_data$StatisticalTrend,
+                                        filtered_data$N_Data, filtered_data$N_Years,
+                                        filtered_data$Period, filtered_data$ProgramLocationID,
+                                        filtered_data$Median, weighted_mean_sen_slope)
+    description <- paste0("<p>",description,"</p>")
+    
+    # Table to store results
+    descriptionText <- data.table(
+      "ManagedAreaName" = ma,
+      "ParameterName" = param,
+      "Description" = description
+    )
+    
+    descriptionTable <- bind_rows(descriptionTable, descriptionText)
+    
+    cat("  \n")
+    cat(description)
+    cat("  \n")
+  }
+}
+
+descriptionTable$Type <- "Continuous"
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_", 
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB, 
+           file = paste0("output/Atlas_Descriptions_", 
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
 
 ```
 
 
-```{r test_functions}
+```{r test_functions, eval=FALSE}
 
 test_snippet <- function(num_programs, list_programs, param, ma, num_years){
   if(num_programs>1){
@@ -138,55 +218,3 @@ test_snippet2 <- function(filtered_data, trend, parameter){
 }
 
 ```
-
-
-
-```{r results='asis'}
-
-# Generate and display descriptions for each indicator
-for(ma in unique(data$ManagedAreaName)){
-  cat("  \n")
-  cat(glue("# {ma}"))
-  cat("  \n")
-  
-  for(param in unique(data[ManagedAreaName==ma, ]$ParameterName)){
-    filtered_data <- data[ManagedAreaName==ma & ParameterName==param, ]
-    
-    cat("  \n")
-    cat(glue("## {param}"))
-    cat("  \n")
-    
-    # Testing alternate description
-    # Grab necessary variables
-    num_programs <- length(unique(filtered_data$ProgramID))
-    list_programs <- paste(unique(filtered_data$ProgramName), collapse = ", ")
-    num_years <- max(filtered_data$LatestYear) - min(filtered_data$EarliestYear)
-    
-    # Text for available trends
-    available_trends <- unique(filtered_data$StatisticalTrend)
-    
-    trend_text <- c()
-    for(trend in available_trends){
-      trend_text <- c(trend_text, test_snippet2(filtered_data, trend, param))
-    }
-    
-    description <- paste(
-      paste0("The table below summarizes the results of analyses of ", param," over a ", num_years, "-year span. "),
-      test_snippet(num_programs, list_programs, param, ma, num_years),
-      trend_text
-    )
-    
-    
-    # Generate and display the description
-    # description <- generate_description(ma, param, filtered_data$StatisticalTrend,
-    #                                     filtered_data$N_Data, filtered_data$N_Years,
-    #                                     filtered_data$Period, filtered_data$ProgramLocationID,
-    #                                     filtered_data$Median)
-    cat("  \n")
-    cat(description)
-    cat("  \n")
-  }
-}
-
-```
-
