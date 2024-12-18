@@ -47,11 +47,11 @@ get_seacar_citation <- function(url) {
   return(citation)
 }
 
-#Apply the function to each link
-citations <- data.frame(
-  Link = links,
-  Citation = sapply(links, get_seacar_citation)
-)
+# #Apply the function to each link
+# citations <- data.frame(
+#   Link = links,
+#   Citation = sapply(links, get_seacar_citation)
+# )
 
 #Faster, parallel version of above
 plan(multisession, workers = availableCores() - 2)
