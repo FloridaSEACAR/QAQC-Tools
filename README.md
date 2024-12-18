@@ -30,3 +30,8 @@ Many scripts contain the variable "seacar_data_location" which points to the loc
 
 ## ParameterList.R
 * Generates a .xlsx file that records which parameters are included in Combined Export Tables and records the number of records and the data file used.
+
+## species_crosswalk_check.R
+* Generates a .csv file outlining each Habitat and CommonIdentifier, SpeciesGroup1, SpeciesGroup2 combinations available in latest combined table exports.
+* Requires the latest SEACAR_Metdata.xlsx file as an input to verify correct implementation of *Mthd_SpeciesCrosswalk* tab in latest exports.
+* `match` column (TRUE or FALSE) is created to confirm correct implementation. If all values are TRUE, the species crosswalk has been implemented correctly.
