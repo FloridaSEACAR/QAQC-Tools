@@ -1,0 +1,150 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(glue)
+library(dplyr)
+library(openxlsx)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+sav_lme <- fread("../../../SEACAR_Trend_Analyses/SAV/output/website/SAV_BBpct_LMEresults_All.txt") %>% distinct()
+
+# Re-create "Period" column
+sav_lme <- sav_lme[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+sav_lme <- sav_lme[!Species=="No grass in quadrat", ]
+
+# Lower-case species names, exception for acronym SAV
+sav_lme[Species!="Total SAV", `:=` (Species = tolower(Species))]
+sav_lme[Species=="Total SAV", `:=` (Species = "total SAV")]
+
+```
+
+```{r, sav_trend_templates}
+## Text should follow this format:
+## {N} species increased between {min slope} and {max slope}% per year based on positive LME slopes, while {N} decreased between {min slope} and {max slope}% per year. 
+## {N} species did not change in percent cover during the period of study. 
+## A statistical model could not be fitted for {N} species.
+######
+## Where N is the list of species names
+## Containing the following elements:
+## Increasing species trend
+## Decreasing species trend
+## No significant trend
+## No model
+```
+
+```{r generate_description_function}
+generate_sav_description <- function(data) {
+  increasing <- list()
+  decreasing <- list()
+  no_change <- list()
+  insufficient <- c()
+  
+  min_years <- c()
+  max_years <- c()
+  
+  for (i in 1:nrow(data)) {
+    species <- data$Species[i]
+    trend <- data$StatisticalTrend[i]
+    record <- data$Period[i]
+    
+    if (is.na(trend) || str_detect(trend, "Insufficient|Model did not fit")) {
+      insufficient <- c(insufficient, species)
+      next
+    }
+    
+    years <- str_split(record, " - ")[[1]]
+    start_year <- as.integer(trimws(years[1]))
+    end_year <- as.integer(trimws(years[2]))
+    
+    slope <- round(as.numeric(data$LME_Slope[i]), 2)
+    
+    if (str_detect(tolower(trend), "increasing")) {
+      increasing[[length(increasing)+1]] <- list(species = species, slope = slope)
+    } else if (str_detect(tolower(trend), "decreasing")) {
+      decreasing[[length(decreasing)+1]] <- list(species = species, slope = abs(slope))
+    } else {
+      no_change[[length(no_change)+1]] <- species
+      min_years <- c(min_years, start_year)
+      max_years <- c(max_years, end_year)
+    }
+  }
+  
+  sentences <- c()
+
+  if (length(increasing) == 1) {
+    s <- increasing[[1]]
+    sentences <- c(sentences, sprintf("%s increased in percent cover at an estimated rate of %.2f%% per year.", s$species, s$slope))
+  } else if (length(increasing) == 2) {
+    parts <- sapply(increasing, function(s) sprintf("%s (%.2f%%)", s$species, s$slope))
+    sentences <- c(sentences, sprintf("Percent cover of %s and %s increased over time.", parts[1], parts[2]))
+  } else if (length(increasing) > 2) {
+    parts <- sapply(decreasing, function(s) sprintf("%s (%.2f%%)", s$species, s$slope))
+    species_list <- paste(parts[1:(length(parts)-1)], collapse = ", ")
+    species_list <- paste0(species_list, ", and ", parts[[length(parts)]])
+    sentences <- c(sentences, sprintf("Percent cover of %s increased over time.", species_list))
+  }
+
+  if (length(decreasing) == 1) {
+    s <- decreasing[[1]]
+    sentences <- c(sentences, sprintf("%s declined in percent cover at an estimated rate of %.2f%% per year.", s$species, s$slope))
+  } else if (length(decreasing) == 2) {
+    parts <- sapply(decreasing, function(s) sprintf("%s (%.2f%%)", s$species, s$slope))
+    sentences <- c(sentences, sprintf("Percent cover of %s and %s declined over time.", parts[1], parts[2]))
+  } else if (length(decreasing) > 2) {
+    parts <- sapply(decreasing, function(s) sprintf("%s (%.2f%%)", s$species, s$slope))
+    species_list <- paste(parts[1:(length(parts)-1)], collapse = ", ")
+    species_list <- paste0(species_list, ", and ", parts[[length(parts)]])
+    sentences <- c(sentences, sprintf("Percent cover of %s declined over time.", species_list))
+  }
+
+  if (length(no_change) > 0) {
+    min_yr <- min(min_years)
+    max_yr <- max(max_years)
+    if (length(no_change) == 1) {
+      sentences <- c(sentences, sprintf("%s showed no directional change in percent cover between %d and %d.", no_change[[1]], min_yr, max_yr))
+    } else if (length(no_change) == 2) {
+      sentences <- c(sentences, sprintf("%s and %s showed no directional change in percent cover between %d and %d.", no_change[[1]], no_change[[2]], min_yr, max_yr))
+    } else {
+      species_list <- paste(no_change[1:(length(no_change)-1)], collapse = ", ")
+      species_list <- paste0(species_list, ", and ", no_change[[length(no_change)]])
+      sentences <- c(sentences, sprintf("%s showed no directional change in percent cover between %d and %d.", species_list, min_yr, max_yr))
+    }
+  }
+
+  if (length(insufficient) > 0) {
+    if (length(insufficient) == 1) {
+      sentences <- c(sentences, sprintf("Trends could not be evaluated for %s due to insufficient data.", insufficient[1]))
+    } else if (length(insufficient) == 2) {
+      sentences <- c(sentences, sprintf("Trends could not be evaluated for %s and %s due to insufficient data.", insufficient[1], insufficient[2]))
+    } else {
+      species_list <- paste(insufficient[1:(length(insufficient)-1)], collapse = ", ")
+      species_list <- paste0(species_list, ", and ", insufficient[length(insufficient)])
+      sentences <- c(sentences, sprintf("Trends could not be evaluated for %s due to insufficient data.", species_list))
+    }
+  }
+  return(paste(str_to_sentence(sentences), collapse = " "))
+}
+```
+
+```{r run_script, results='asis'}
+for(ma in unique(sav_lme$ManagedAreaName)){
+  # if(!ma %in% ("Estero Bay Aquatic Preserve")) next
+  # if(!ma %in% ("Pinellas County Aquatic Preserve")) next
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  filtered_sav <- sav_lme[ManagedAreaName==ma, ]
+  description <- generate_sav_description(filtered_sav)
+  description <- gsub("total sav", "total SAV", description)
+  cat(description)
+  cat("  \n")
+}
+```
