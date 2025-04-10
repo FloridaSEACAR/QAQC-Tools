@@ -1,0 +1,230 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+  
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(stringi)
+library(glue)
+library(dplyr)
+library(openxlsx)
+library(english)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+# Apply text trend designations, convert from numeric
+checkWCTrends <- function(p, SennSlope){
+  increasing <- SennSlope > 0
+  trendPresent <- p < 0.05
+  trendStatus <- "No significant trend"
+  if(trendPresent){
+    trendStatus <- ifelse(increasing, "Significantly increasing trend", "Significantly decreasing trend")
+  }          
+  return(trendStatus)
+}
+
+# Import continuous SKT results
+cont <- fread("../../../SEACAR_Trend_Analyses/WQ_Cont_Discrete/output/WQ_Continuous_All_KendallTau_Stats.txt") %>% distinct()
+
+# Create Period of Record column
+cont <- cont[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+
+# Apply statistical trend function
+cont <- cont[Website==1, ] %>% rowwise() %>%
+  mutate(
+    StatisticalTrend = ifelse(!is.na(Trend), checkWCTrends(p, SennSlope), "Insufficient data")
+  ) %>% as.data.table()
+
+websiteParams <- fread("data/WebsiteParameters.csv")
+# Correct order of websiteParams to match format from the Atlas
+websiteParams <- websiteParams %>% 
+  arrange(factor(IndicatorName, levels = c("Nutrients","Water Quality","Water Clarity")),
+          factor(ParameterName, levels = c("Total Nitrogen","Total Phosphorus",
+                                           "Dissolved Oxygen", "Dissolved Oxygen Saturation", "Salinity", "Water Temperature", "pH",
+                                           "Turbidity", "Total Suspended Solids", "Chlorophyll a, Uncorrected for Pheophytin",
+                                           "Chlorophyll a, Corrected for Pheophytin", "Secchi Depth", "Colored Dissolved Organic Matter"))) %>%
+  filter(Website==1)
+setDT(websiteParams)
+
+```
+
+```{r, wc_continuous_trend_templates}
+## Text should follow this format:
+## Increasing statement: At {N} program location(s), {Parameter} increased between {lower end sen}% and {upper end sen}% per year.
+## Decreasing statement: At {N} locations there was a decrease between {lower end}% and {upper end}% per year.
+## No significant trend: {N} locations showed no change in {Parameter}.
+## No model: A statistical model could not be fitted for {N} stations.
+```
+
+```{r generate_description_function}
+generate_wc_description <- function(data, parameter) {
+  p_subset <- data[ParameterName==parameter, ]
+  units <- websiteParams[ParameterName==parameter, unique(ParameterUnits)]
+  
+  results_p_subset <- p_subset %>% 
+    group_by(ParameterName, StatisticalTrend) %>% 
+    summarise(n_stations = n(), 
+              min_slope = min(SennSlope), 
+              max_slope = max(SennSlope),
+              min_slope_pct = (min_slope * n_stations) / mean(SennSlope),
+              max_slope_pct = (max_slope * n_stations) / mean(SennSlope),
+              .groups = "keep") %>% as.data.table()
+  
+  results_p_subset$min_slope <- ifelse(is.na(results_p_subset$min_slope), NA, abs(results_p_subset$min_slope))
+  results_p_subset$min_slope <- round(results_p_subset$min_slope, 2)
+  results_p_subset$max_slope <- ifelse(is.na(results_p_subset$max_slope), NA, abs(results_p_subset$max_slope))
+  results_p_subset$max_slope <- round(results_p_subset$max_slope, 2)
+  
+  # It is necessary to determine the ordering of the absolute value slopes for each subset beforehand (slope1, slope2)
+  # Because once some are converted to character they cannot be compared
+  increasing <- results_p_subset[str_detect(tolower(StatisticalTrend), "increasing"), ]
+  increasing$slope1 <- min(increasing$min_slope, increasing$max_slope)
+  # increasing$slope1 <- ifelse(increasing$slope1==0.00, "less than 0.01", increasing$slope1)
+  increasing$slope2 <- max(increasing$min_slope, increasing$max_slope)
+  # increasing$slope2 <- ifelse(increasing$slope2==0.00, "less than 0.01", increasing$slope2)
+  
+  decreasing <- results_p_subset[str_detect(tolower(StatisticalTrend), "decreasing"), ]
+  decreasing$slope1 <- min(decreasing$min_slope, decreasing$max_slope)
+  # decreasing$slope1 <- ifelse(decreasing$slope1==0.00, "less than 0.01", decreasing$slope1)
+  decreasing$slope2 <- max(decreasing$min_slope, decreasing$max_slope)
+  # decreasing$slope2 <- ifelse(decreasing$slope2==0.00, "less than 0.01", decreasing$slope2)
+  
+  no_change <- results_p_subset[str_detect(tolower(StatisticalTrend), "no significant"), ]
+  insufficient <- results_p_subset[str_detect(tolower(StatisticalTrend), "insufficient"), ]
+  
+  display_parameter <- ifelse(parameter=="pH", parameter, tolower(parameter))
+  units <- ifelse(parameter=="pH", "pH units", units)
+  
+  sentences <- c()
+  
+  if(nrow(increasing)>0){
+    singular <- increasing$n_stations==1
+    if(singular){
+      increasing$min_slope <- ifelse(increasing$min_slope==0.00, "less than 0.01", increasing$min_slope)
+      if(class(increasing$min_slope)=="character"){
+        sentence <- sprintf("At %s program location, %s increased by %s %s per year.", 
+                            english(increasing$n_stations), display_parameter, increasing$min_slope, units)        
+      } else {
+        sentence <- sprintf("At %s program location, %s increased by %.2f %s per year.", 
+                            english(increasing$n_stations), display_parameter, increasing$min_slope, units)            
+      }
+      sentences <- c(sentences, sentence)
+    } else {
+      sentence <- sprintf("At %s program locations, %s increased between %.2f and %.2f %s per year.", 
+                          english(increasing$n_stations), 
+                          display_parameter, 
+                          increasing$slope1,
+                          increasing$slope2, 
+                          units)
+      sentences <- c(sentences, sentence)
+    }
+  }
+  
+  if(nrow(decreasing)>0){
+    singular <- decreasing$n_stations==1
+    if(singular){
+      decreasing$min_slope <- ifelse(decreasing$min_slope==0.00, "less than 0.01", decreasing$min_slope)
+      if(class(decreasing$min_slope)=="character"){
+        sentence <- sprintf("At %s program location, %s increased by %s %s per year.", 
+                            english(decreasing$n_stations), display_parameter, decreasing$min_slope, units)        
+      } else {
+        sentence <- sprintf("At %s program location, %s increased by %.2f %s per year.", 
+                            english(decreasing$n_stations), display_parameter, decreasing$min_slope, units)            
+      }
+      sentences <- c(sentences, sentence)
+    } else {
+      sentence <- sprintf("At %s locations there was a decrease in %s between %.2f and %.2f %s per year.", 
+                          english(decreasing$n_stations), 
+                          display_parameter, 
+                          decreasing$slope1,
+                          decreasing$slope2,
+                          units)
+      sentences <- c(sentences, sentence)
+    }
+  }
+  
+  if(nrow(no_change)>0){
+    singular <- no_change$n_stations==1
+    if(singular){
+      sentence <- sprintf("No detectable change in %s was observed at %s location.", 
+                          display_parameter, english(no_change$n_stations))
+    } else {
+      sentence <- sprintf("No detectable change in %s was observed at %s locations.", 
+                          display_parameter, english(no_change$n_stations))
+    }
+    sentences <- c(sentences, sentence)
+  }
+  
+  if(nrow(insufficient)>0){
+    singular <- insufficient$n_stations==1
+    if(singular){
+      sentence <- sprintf("A statistical model could not be fitted for %s station.", 
+                          english(insufficient$n_stations))
+      sentences <- c(sentences, sentence)       
+    } else {
+      sentence <- sprintf("A statistical model could not be fitted for %s stations.", 
+                          english(insufficient$n_stations))
+      sentences <- c(sentences, sentence) 
+    }
+  }
+  
+  return(paste(str_to_sentence(sentences), collapse = " "))
+}
+```
+
+```{r run_script, results='asis'}
+# Empty table to store results
+descriptionTable <- data.table()
+# Generate and display descriptions for each MA
+for(ma in unique(cont$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  filtered_cont <- cont[ManagedAreaName==ma, ]
+  descriptions <- list()
+  for(parameter in unique(filtered_cont$ParameterName)){
+    cat("  \n")
+    cat(glue("## {parameter}"))
+    cat("  \n")
+    description <- paste0("<p>",generate_wc_description(filtered_cont, parameter),"</p>")
+    
+    # Apply alterations to final display of
+    description <- stri_replace_all_regex(
+      description,
+      pattern = c(" ph", "mg/l", "ntu ", " deg c ", "ppt ", " % per"),
+      replacement = c(" pH", "mg/L", "NTU ", "&deg;C ", "PPT ", "% per"),
+      vectorize = FALSE
+    )
+    
+    # Save description in excel workbook
+    descriptionText <- data.table(
+      "ManagedAreaName" = ma,
+      "Habitat" = "Water Column",
+      "Type"= "Continuous",
+      "ParameterName" = parameter,
+      "Description" = description
+    )
+    
+    descriptions[[parameter]] <- descriptionText
+    
+    cat(description)
+    cat("  \n")
+  }
+  
+  descriptionTable <- bind_rows(descriptionTable, bind_rows(descriptions))
+}
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_", 
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB, 
+           file = paste0("output/Atlas_Descriptions_", 
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+```

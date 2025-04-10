@@ -1,0 +1,183 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(stringi)
+library(glue)
+library(dplyr)
+library(openxlsx)
+library(english)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+# Apply text trend designations, convert from numeric
+checkWCTrends <- function(p, SennSlope){
+  increasing <- SennSlope > 0
+  trendPresent <- p < 0.05
+  trendStatus <- "No significant trend"
+  if(trendPresent){
+    trendStatus <- ifelse(increasing, "Significantly increasing trend", "Significantly decreasing trend")
+  }          
+  return(trendStatus)
+}
+
+# Import discrete SKT results
+disc <- fread("../../../SEACAR_Trend_Analyses/WQ_Cont_Discrete/output/WQ_Discrete_All_KendallTau_Stats.txt") %>% distinct()
+
+# Create Period of Record column
+disc <- disc[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+
+# Apply statistical trend function
+disc <- disc[Website==1, ] %>% rowwise() %>%
+  mutate(
+    StatisticalTrend = ifelse(!is.na(Trend), checkWCTrends(p, SennSlope), "Insufficient data")
+  ) %>% as.data.table()
+
+# Import WebsiteParameters.csv
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+```
+
+```{r, wc_discrete_trend_templates}
+## Text should follow this format:
+## Water Quality Discrete: {Parameter} {increased or decreased} by an average of {slope}% per year.
+## Water Quality pH Discrete: The estimated annual change of {slope}% in pH indicated that {pos_slope_alkalinity or neg_slope_acidity} increased over time.
+## Water Clarity Discrete: {Parameter} showed an {increasing or decreasing} trend by {slope}% per year, indicating an {increase or decrease} in water clarity.
+## WQ-WC Discrete No change: {Parameter} showed no detectable trend between {beg_year} and {end_year}.
+```
+
+```{r generate_description_function}
+generate_wc_description <- function(data, parameter, indicator){
+  data$SennSlope <- ifelse(round(data$SennSlope,2)==0.00, "less than 0.01", 
+                           round(data$SennSlope,2))
+  p_subset <- data[ParameterName==parameter, ]
+  units <- websiteParams[ParameterName==parameter, unique(ParameterUnits)]
+  
+  increasing <- p_subset[str_detect(tolower(StatisticalTrend), "increasing"), ]
+  decreasing <- p_subset[str_detect(tolower(StatisticalTrend), "decreasing"), ]
+  no_change <- p_subset[str_detect(tolower(StatisticalTrend), "no significant"), ]
+  insufficient <- p_subset[str_detect(tolower(StatisticalTrend), "insufficient"), ]
+  
+  display_parameter <- ifelse(parameter=="pH", parameter, tolower(parameter))
+  
+  sentences <- c()
+  
+  if(nrow(increasing)>0){
+    if(indicator=="Water Clarity"){
+      wc_trend <- "a decrease"
+      if(parameter=="Secchi Depth"){
+        sentence <- sprintf("%s became shallower by an average of %s %s per year, indicating %s in water clarity.", 
+                            display_parameter, increasing$SennSlope, units, wc_trend)
+      } else {
+        sentence <- sprintf("%s increased by an average of %s %s per year, indicating %s in water clarity.", 
+                            display_parameter, increasing$SennSlope, units, wc_trend)
+      }
+      sentences <- c(sentences, sentence)
+    } else {
+      sentence <- sprintf("%s increased by an average of %s %s per year.", 
+                          display_parameter, increasing$SennSlope, units)
+      sentences <- c(sentences, sentence)
+    }
+  }
+
+  if(nrow(decreasing)>0){
+    if(indicator=="Water Clarity"){
+      wc_trend <- "an increase"
+       if(parameter=="Secchi Depth"){
+        sentence <- sprintf("%s became deeper by an average of %s %s per year, indicating %s in water clarity.", 
+                            display_parameter, decreasing$SennSlope, units, wc_trend)
+       } else {
+        sentence <- sprintf("%s decreased by an average of %s %s per year, indicating %s in water clarity.", 
+                            display_parameter, decreasing$SennSlope, units, wc_trend)
+       }
+      sentences <- c(sentences, sentence)     
+    } else {
+      sentence <- sprintf("%s decreased by an average of %s %s per year.", 
+                          display_parameter, decreasing$SennSlope, units)
+      sentences <- c(sentences, sentence)      
+    }
+  }
+  
+  if(nrow(no_change)>0){
+    sentence <- sprintf("%s showed no detectable trend between %s and %s.", 
+                        display_parameter, no_change$EarliestYear, no_change$LatestYear)
+    sentences <- c(sentences, sentence)
+  }
+  
+  if(nrow(insufficient)>0){
+    sentence <- sprintf("A statistical model could not be fitted for %s.", 
+                        display_parameter)
+    sentences <- c(sentences, sentence)
+  }
+  
+  return(paste(str_to_sentence(sentences), collapse = " "))
+}
+```
+
+```{r run_script, results='asis'}
+# Overall trends table to derive text from
+all_disc_trends <- disc %>% 
+  group_by(ManagedAreaName, ParameterName, StatisticalTrend, SennSlope, 
+           EarliestYear, LatestYear) %>%
+  mutate(SennSlope = abs(
+    ifelse(ParameterName %in% c("Total Nitrogen", "Total Phosphorus"), 
+           round(SennSlope, 3), round(SennSlope, 2)))) %>%
+  summarise(.groups="keep") %>% as.data.table()
+# Empty table to store results
+descriptionTable <- data.table()
+# Generate and display descriptions for each MA
+for(ma in unique(all_disc_trends$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  filtered_disc <- all_disc_trends[ManagedAreaName==ma, ]
+  
+  descriptions <- list()
+  for(parameter in unique(filtered_disc$ParameterName)){
+    indicator <- websiteParams[ParameterName==parameter, unique(IndicatorName)]
+    cat("  \n")
+    cat(glue("## {parameter}"))
+    cat("  \n")
+    description <- paste0("<p>",generate_wc_description(filtered_disc, parameter, indicator),"</p>")
+    
+    # Apply alterations to final display of
+    description <- stri_replace_all_regex(
+      description,
+      pattern = c("Ph ", " ph ", "mg/l", "ntu ", " deg c ", "ppt ", " % per", "ug/l", "secchi", " pcu ", " ph. "),
+      replacement = c("pH ", " pH ", "mg/L", "NTU ", "&deg;C ", "PPT ", "% per", "&micro;g/L", "Secchi", " PCU ", " pH. "),
+      vectorize = FALSE
+    )
+    
+    # Save description in excel workbook
+    descriptionText <- data.table(
+      "ManagedAreaName" = ma,
+      "Habitat" = "Water Column",
+      "Type"= "Discrete",
+      "ParameterName" = parameter,
+      "Description" = description
+    )
+    
+    descriptions[[parameter]] <- descriptionText
+    
+    cat(description)
+    cat("  \n")
+  }
+  
+  descriptionTable <- bind_rows(descriptionTable, bind_rows(descriptions))
+}
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_", 
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB, 
+           file = paste0("output/Atlas_Descriptions_", 
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+```

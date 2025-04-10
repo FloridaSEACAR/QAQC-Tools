@@ -1,0 +1,94 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(stringi)
+library(glue)
+library(dplyr)
+library(openxlsx)
+library(english)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+# Import CW overall stats
+cw <- fread("../../../SEACAR_Trend_Analyses/Coastal_Wetlands/output/CoastalWetlands_SpeciesRichness_MA_Overall_Stats.txt") %>% distinct()
+
+# Create Period of Record column
+# cw <- cw[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+
+# Import WebsiteParameters.csv
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+```
+
+```{r, wc_cw_trend_templates}
+## Text should follow this format:
+## Between {start year} and {end year}, the median annual number of species for {species group in italics} was {median} based on {sample count} observations. [Repeat for each species group].
+```
+
+```{r generate_description_function}
+generate_cw_description <- function(data){
+  data$N_Data <- formatC(data$N_Data, format="d", big.mark=",")
+  
+  sentences <- c()
+  for(i in seq_len(nrow(data))){
+    sp <- data[i]$Species
+    median <- data[i]$Median
+    n_data <- data[i]$N_Data
+    min_year <- data[i]$EarliestYear
+    max_year <- data[i]$LatestYear
+    
+    sentence <- glue("Between {min_year} and {max_year}, the median annual number of species for <i>{sp}</i> was {median} based on {n_data} observations.")
+    sentences <- c(sentences, sentence)
+  }
+  
+  return(paste(str_to_sentence(sentences), collapse = " "))
+}
+```
+
+```{r run_script, results='asis'}
+indicator <- "Species Composition"
+parameter <- "Total/Canopy Percent Cover"
+# Empty table to store results
+descriptionTable <- data.table()
+descriptions <- list()
+# Generate and display descriptions for each MA
+for(ma in unique(cw$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  filtered_cw <- cw[ManagedAreaName==ma, ]
+  
+  description <- paste0("<p>",generate_cw_description(filtered_cw),"</p>")
+  
+  # Save description in excel workbook
+  descriptionText <- data.table(
+    "ManagedAreaName" = ma,
+    "Habitat" = "Coastal Wetlands",
+    "Type"= indicator,
+    "ParameterName" = parameter,
+    "Description" = description
+  )
+  
+  descriptions[[ma]] <- descriptionText
+  
+  cat(description)
+  cat("  \n")
+}
+descriptionTable <- bind_rows(descriptionTable, bind_rows(descriptions))
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_", 
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB, 
+           file = paste0("output/Atlas_Descriptions_", 
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+```

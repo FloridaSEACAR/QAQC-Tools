@@ -1,0 +1,82 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r libraries, warning=FALSE, echo=FALSE, message=FALSE}
+library(rstudioapi)
+library(knitr)
+library(openxlsx)
+library(glue)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+wd <- dirname(getActiveDocumentContext()$path)
+setwd(wd)
+
+```
+
+```{r display_results, warning = FALSE, echo = FALSE, message = FALSE, results='asis'}
+
+for(ma in c("Alligator Harbor Aquatic Preserve","Apalachicola Bay Aquatic Preserve",
+            "Big Bend Seagrasses Aquatic Preserve", "Pinellas County Aquatic Preserve", 
+            "Southeast Florida Coral Reef Ecosystem Conservation Area")){
+  in_nekton <- ma %in% unique(all_nekton_trends$ManagedAreaName)
+  in_coral <- ma %in% all_coral_trends
+  in_sav <- ma %in% unique(sav_lme$ManagedAreaName)
+  in_cw <- ma %in% unique(cw$ManagedAreaName)
+  
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  for(habitat in unique(websiteParams$HabitatName)){
+    if(!habitat %in% c("Water Column", "Submerged Aquatic Vegetation", "Coral/Coral Reef", "Coastal Wetlands")) next
+    if(habitat=="Coral/Coral Reef" & !in_coral) next
+    if(habitat=="Submerged Aquatic Vegetation" & !in_sav) next
+    if(habitat=="Coastal Wetlands" & !in_cw) next
+    cat(glue("## {habitat}"))
+    for(indicator in websiteParams[HabitatName==habitat, unique(IndicatorName)]){
+      if(indicator=="Nekton" & !in_nekton) next
+      cat("  \n")
+      cat(glue("### {indicator}"))
+      cat("  \n")
+      
+      # Filter once for the current indicator
+      indicator_subset <- websiteParams[HabitatName==habitat & IndicatorName == indicator, ]
+      
+      for(i in 1:nrow(indicator_subset)){
+        filteredSubset <- indicator_subset[i]
+        parameter <- filteredSubset$ParameterName
+        type <- filteredSubset$SamplingFrequency
+        
+        if(indicator %in% c("Water Quality", "Water Clarity", "Nekton")){
+          if(indicator=="Nekton"){
+            descText <- descTable[ManagedAreaName==ma & Type == "Nekton", Description]
+            cat(glue("#### {parameter}"))
+          } else {
+            descText <- descTable[ManagedAreaName==ma & ParameterName==parameter & Type == type, Description]
+            cat(glue("#### {parameter} - {type}"))
+          }
+        } else if(habitat=="Submerged Aquatic Vegetation" & indicator=="Percent Cover"){
+          descText <- descTable[ManagedAreaName==ma & Habitat==habitat, Description]
+          cat(glue("#### {parameter}"))
+        } else if(habitat=="Coral/Coral Reef") {
+          descText <- descTable[ManagedAreaName==ma & ParameterName==parameter & Type == indicator, Description]
+          cat(glue("#### {parameter}"))
+        } else {
+          descText <- descTable[ManagedAreaName==ma & ParameterName==parameter, Description]
+          cat(glue("#### {parameter}"))
+        }
+        cat("  \n")
+        cat(descText)
+        cat("  \n")
+      }
+    }
+  }
+  
+
+}
+
+```

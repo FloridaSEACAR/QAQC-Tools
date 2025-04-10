@@ -1,0 +1,166 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(stringi)
+library(glue)
+library(dplyr)
+library(openxlsx)
+library(english)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+# Function to create text-based trend designations
+checkTrends <- function(p, LME_Slope, SufficientData){
+  if(SufficientData){
+    if(is.na(LME_Slope)){
+      return("Model did not fit the available data")
+    } else {
+      increasing <- LME_Slope > 0
+      trendPresent <- p <= 0.05
+      trendStatus <- "No significant trend"
+      if(trendPresent){
+        trendStatus <- ifelse(increasing, "Significantly increasing trend", 
+                              "Significantly decreasing trend")
+      }          
+    }
+  } else {
+    trendStatus <- "Insufficient data to calculate trend"
+  }
+  return(trendStatus)
+}
+
+# Import coral overall stats
+coral_pc_lme <- fread("../../../SEACAR_Trend_Analyses/coral/output/PercentCover/Coral_PC_LME_Stats.txt") %>% distinct() %>%
+  rowwise() %>% 
+  mutate(StatisticalTrend = checkTrends(p = LME_p, LME_Slope = LME_Slope, 
+                                        SufficientData = SufficientData)) %>% 
+  as.data.table()
+coral_sr <- fread("../../../SEACAR_Trend_Analyses/coral/output/SpeciesRichness/Coral_SpeciesRichness_MA_Overall_Stats.txt") %>% distinct()
+
+# Create Period of Record column
+# coral <- coral[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+
+# Import WebsiteParameters.csv
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+```
+
+```{r, wc_coral_trend_templates}
+## Text should follow this format:
+## Percent Cover
+## {Parameter} {increased or decreased} by an average of {slope}% per year between {start year} and {end year}.
+## {Parameter} showed no detectable trend between {start year} and {end year}.
+
+## Species Richness
+## Over the period of record, the median annual number of taxa ranged from {minimum median} to {maximum median}.
+```
+
+```{r generate_description_function_PC}
+generate_coral_description_pc <- function(data){
+  trend <- data$StatisticalTrend
+  min_year <- data$EarliestYear
+  max_year <- data$LatestYear
+  slope <- ifelse(round(data$LME_Slope, 2)==0.00, "less than 0.01", round(data$LME_Slope, 2))
+  if(str_detect(trend, "Insufficient")){
+    sentence <- glue("There was insufficient data to determine a trend between {min_year} and {max_year}.")
+  }
+  if(str_detect(trend, "Model did not fit")){
+    model_result <- glue("The model did not fit the available data between {min_year} and {max_year}.")
+  }
+  if(str_detect(trend, "No significant")){
+    sentence <- glue("Percent cover showed no detectable trend between {min_year} and {max_year}.")
+  }
+  if(str_detect(trend, "Significantly increasing")){
+    sentence <- glue("Percent cover increased by an average of {slope}% per year between {min_year} and {max_year}.")
+  }
+  if(str_detect(trend, "Significantly decreasing")){
+    sentence <- glue("Percent cover decreased by an average of {slope}% per year between {min_year} and {max_year}.")
+  }
+  return(sentence)
+}
+```
+
+```{r generate_description_function_SR}
+generate_coral_description_sr <- function(data){
+  data$N_Data <- formatC(data$N_Data, format="d", big.mark=",")
+  
+  median <- data$Median
+  n_data <- data$N_Data
+  min_year <- data$EarliestYear
+  max_year <- data$LatestYear
+  
+  sentence <- glue("The median annual number of taxa was {median} based on {n_data} observations collected between {min_year} and {max_year}.")
+  
+  return(sentence)
+}
+```
+
+```{r run_script, results='asis'}
+# Overall trends table to determine which MAs have coral data
+all_coral_trends <- unique(c(unique(coral_sr$ManagedAreaName), 
+                             unique(coral_pc_lme$ManagedAreaName)))
+# Empty table to store results
+descriptionTable <- data.table()
+# Generate and display descriptions for each MA
+for(ma in all_coral_trends){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  # Species Richness
+  if(ma %in% unique(coral_sr$ManagedAreaName)){
+    cat("  \n")
+    cat("## Species Richness")
+    cat("  \n")
+    filtered_sr <- coral_sr[ManagedAreaName==ma, ]
+    indicator <- "Grazers and Reef Dependent Species"
+    description <- paste0("<p>",generate_coral_description_sr(filtered_sr),"</p>")
+    # Save description in excel workbook
+    descriptionText <- data.table(
+      "ManagedAreaName" = ma,
+      "Habitat" = "Coral/Coral Reef",
+      "Type"= indicator,
+      "ParameterName" = "Presence/Absence",
+      "Description" = description
+    )
+    descriptionTable <- bind_rows(descriptionTable, descriptionText)
+    cat(description)
+    cat("  \n")
+  }
+  
+  if(ma %in% unique(coral_pc_lme$ManagedAreaName)){
+    cat("  \n")
+    cat("## Percent Cover")
+    cat("  \n")
+    filtered_pc <- coral_pc_lme[ManagedAreaName==ma, ]
+    indicator <- "Percent Cover"
+    description <- paste0("<p>",generate_coral_description_pc(filtered_pc),"</p>")
+    # Save description in excel workbook
+    descriptionText <- data.table(
+      "ManagedAreaName" = ma,
+      "Habitat" = "Coral/Coral Reef",
+      "Type"= indicator,
+      "ParameterName" = "Percent Cover",
+      "Description" = description
+    )
+    descriptionTable <- bind_rows(descriptionTable, descriptionText)
+    cat(description)
+    cat("  \n")
+  }
+}
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_", 
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB, 
+           file = paste0("output/Atlas_Descriptions_", 
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+```

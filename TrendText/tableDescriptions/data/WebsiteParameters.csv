@@ -1,25 +1,33 @@
-﻿IndicatorName,ParameterName,ParameterShort,ParameterUnits,ActivityType,RelativeDepth,SamplingFrequency,Website
-Water Clarity,"Chlorophyll a, Uncorrected for Pheophytin",Chla,ug/L,Lab,All,Discrete,1
-Water Clarity,"Chlorophyll a, Corrected for Pheophytin",ChlaC,ug/L,Lab,All,Discrete,1
-Water Clarity,Colored Dissolved Organic Matter,CDOM,PCU,Lab,All,Discrete,1
-Water Quality,Dissolved Oxygen,DO,mg/L,Field,All,Discrete,1
-Water Quality,Dissolved Oxygen Saturation,DOS,%,Field,All,Discrete,1
-Water Quality,pH,pH,pH,Field,All,Discrete,1
-Water Quality,Salinity,Sal,ppt,All,All,Discrete,1
-Water Quality,Salinity,Sal,ppt,Field,All,Discrete,0
-Water Quality,Salinity,Sal,ppt,Lab,All,Discrete,0
-Water Clarity,Secchi Depth,Secchi,m,Field,Surface,Discrete,1
-Nutrients,Total Nitrogen,TN,mg/L,Lab,All,Discrete,1
-Nutrients,Total Phosphorus,TP,mg/L,Lab,All,Discrete,1
-Water Clarity,Total Suspended Solids,TSS,mg/L,All,All,Discrete,0
-Water Clarity,Total Suspended Solids,TSS,mg/L,Lab,All,Discrete,1
-Water Clarity,Turbidity,Turb,NTU,All,All,Discrete,0
-Water Clarity,Turbidity,Turb,NTU,Field,All,Discrete,0
-Water Clarity,Turbidity,Turb,NTU,Lab,All,Discrete,1
-Water Quality,Water Temperature,TempW,Deg C,Field,All,Discrete,1
-Water Quality,Dissolved Oxygen,DO,mg/L,,,Continuous,1
-Water Quality,Dissolved Oxygen Saturation,DOS,%,,,Continuous,1
-Water Quality,pH,pH,pH,,,Continuous,1
-Water Quality,Salinity,Sal,ppt,,,Continuous,1
-Water Clarity,Turbidity,Turb,NTU,,,Continuous,1
-Water Quality,Water Temperature,TempW,Deg C,,,Continuous,1
+﻿HabitatName,IndicatorName,IndicatorShort,ParameterName,ParameterShort,ParameterUnits,ActivityType,RelativeDepth,SamplingFrequency,Website,ParameterVisId
+Water Column,Water Clarity,WC,"Chlorophyll a, Uncorrected for Pheophytin",Chla,ug/L,Lab,All,Discrete,1,25
+Water Column,Water Clarity,WC,"Chlorophyll a, Corrected for Pheophytin",ChlaC,ug/L,Lab,All,Discrete,1,56
+Water Column,Water Clarity,WC,Colored Dissolved Organic Matter,CDOM,PCU,Lab,All,Discrete,1,29
+Water Column,Water Quality,WQ,Dissolved Oxygen,DO,mg/L,Field,All,Discrete,1,40
+Water Column,Water Quality,WQ,Dissolved Oxygen Saturation,DOS,%,Field,All,Discrete,1,44
+Water Column,Water Quality,WQ,pH,pH,pH,Field,All,Discrete,1,48
+Water Column,Water Quality,WQ,Salinity,Sal,ppt,All,All,Discrete,1,52
+Water Column,Water Quality,WQ,Salinity,Sal,ppt,Field,All,Discrete,0,
+Water Column,Water Quality,WQ,Salinity,Sal,ppt,Lab,All,Discrete,0,
+Water Column,Water Clarity,WC,Secchi Depth,Secchi,m,Field,Surface,Discrete,1,31
+Water Column,Nutrients,NUT,Total Nitrogen,TN,mg/L,Lab,All,Discrete,1,21
+Water Column,Nutrients,NUT,Total Phosphorus,TP,mg/L,Lab,All,Discrete,1,23
+Water Column,Water Clarity,WC,Total Suspended Solids,TSS,mg/L,All,All,Discrete,0,
+Water Column,Water Clarity,WC,Total Suspended Solids,TSS,mg/L,Lab,All,Discrete,1,32
+Water Column,Water Clarity,WC,Turbidity,Turb,NTU,All,All,Discrete,0,
+Water Column,Water Clarity,WC,Turbidity,Turb,NTU,Field,All,Discrete,0,
+Water Column,Water Clarity,WC,Turbidity,Turb,NTU,Lab,All,Discrete,1,34
+Water Column,Water Quality,WQ,Water Temperature,TempW,Deg C,Field,All,Discrete,1,6
+Water Column,Water Quality,WQ,Dissolved Oxygen,DO,mg/L,,,Continuous,1,41
+Water Column,Water Quality,WQ,Dissolved Oxygen Saturation,DOS,%,,,Continuous,1,45
+Water Column,Water Quality,WQ,pH,pH,pH,,,Continuous,1,49
+Water Column,Water Quality,WQ,Salinity,Sal,ppt,,,Continuous,1,1
+Water Column,Water Clarity,WC,Turbidity,Turb,NTU,,,Continuous,1,35
+Water Column,Water Quality,WQ,Water Temperature,TempW,Deg C,,,Continuous,1,7
+Water Column,Nekton,,Presence/Absence,PA,,,,,1,53
+Coastal Wetlands,Species Composition,,Total/Canopy Percent Cover,PC,,,,,1,11
+Coral/Coral Reef,Percent Cover,,Percent Cover,PC,,,,,1,58
+Coral/Coral Reef,Grazers and Reef Dependent Species,,Presence/Absence,PA,,,,,1,59
+Oyster/Oyster Reef,Density,,Density,Dens,,,,,1,16
+Oyster/Oyster Reef,Percent Live,,Percent Live,PrcLive,,,,,1,17
+Oyster/Oyster Reef,Size Class,,Shell Height,SH,,,,,1,18
+Submerged Aquatic Vegetation,Percent Cover,,Percent Cover,PC,,,,,1,20

@@ -1,0 +1,110 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(stringi)
+library(glue)
+library(dplyr)
+library(openxlsx)
+library(english)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+# Import nekton overall stats
+nekton <- fread("../../../SEACAR_Trend_Analyses/Nekton/output/Nekton_SpeciesRichness_MA_Overall_Stats.txt") %>% distinct()
+
+# Create Period of Record column
+# nekton <- nekton[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+
+# Import WebsiteParameters.csv
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+```
+
+```{r, wc_nekton_trend_templates}
+## Text should follow this format:
+## The median annual number of taxa was {median} based on {sample count} observations collected by {gear type} between {start year} and {end year}.
+```
+
+```{r generate_description_function}
+generate_nekton_description <- function(data){
+  data$N_Data <- formatC(data$N_Data, format="d", big.mark=",")
+  two_geartypes <- length(unique(data$GearTypeSize))>1
+  
+  sentences <- c()
+  
+if(two_geartypes){
+  split_df <- split(filtered_nek, filtered_nek$GearTypeSize)
+  g1 <- split_df[[1]]
+  g2 <- split_df[[2]]
+  sentence <- sprintf("The median annual number of taxa was %.2f based on %s observations collected by %s between %i and %i, and the median annual number of taxa was %.2f based on %s observations collected by %s between %i and %i.", 
+                      g1$Median, formatC(g1$N_Data, format="d", big.mark = ","), g1$GearTypeSize, g1$EarliestYear, g1$LatestYear, 
+                      g2$Median, formatC(g2$N_Data, format="d", big.mark = ","), g2$GearTypeSize, g2$EarliestYear, g2$LatestYear)
+  sentences <- c(sentences, sentence)
+} else {
+  sentence <- sprintf("The median annual number of taxa was %.2f based on %s observations collected by %s between %i and %i.", 
+                      filtered_nek$Median, formatC(filtered_nek$N_Data, format="d", big.mark = ","), filtered_nek$GearTypeSize, filtered_nek$EarliestYear, filtered_nek$LatestYear)
+  sentences <- c(sentences, sentence)
+}
+  
+  return(paste(str_to_sentence(sentences), collapse = " "))
+}
+```
+
+```{r run_script, results='asis'}
+# Overall trends table to derive text from
+all_nekton_trends <- nekton %>% 
+  mutate(GearTypeSize = paste0(GearSize_m, " m ", GearType)) %>%
+  group_by(ManagedAreaName, ParameterName, GearType, GearSize_m, GearTypeSize, 
+           EarliestYear, LatestYear, Median, N_Data) %>%
+  summarise(.groups="keep") %>% as.data.table()
+# Empty table to store results
+descriptionTable <- data.table()
+descriptions <- list()
+# Generate and display descriptions for each MA
+for(ma in unique(all_nekton_trends$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  filtered_nek <- all_nekton_trends[ManagedAreaName==ma, ]
+  
+  description <- paste0("<p>",generate_nekton_description(filtered_nek),"</p>")
+  
+  # description <- stri_replace_all_regex(
+  #   description,
+  #   pattern = str_to_lower(unique(all_nekton_trends$GearTypeSize)),
+  #   replacement = str_to_upper(unique(all_nekton_trends$GearTypeSize)),
+  #   vectorize = FALSE
+  # )
+  
+  # Save description in excel workbook
+  descriptionText <- data.table(
+    "ManagedAreaName" = ma,
+    "Habitat" = "Water Column",
+    "Type"= "Nekton",
+    "ParameterName" = "Presence/Absence",
+    "Description" = description
+  )
+  
+  descriptions[[ma]] <- descriptionText
+  
+  cat(description)
+  cat("  \n")
+}
+descriptionTable <- bind_rows(descriptionTable, bind_rows(descriptions))
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_", 
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB, 
+           file = paste0("output/Atlas_Descriptions_", 
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+```
