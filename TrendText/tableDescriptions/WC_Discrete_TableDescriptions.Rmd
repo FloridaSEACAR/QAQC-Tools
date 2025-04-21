@@ -149,8 +149,8 @@ for(ma in unique(all_disc_trends$ManagedAreaName)){
     # Apply alterations to final display of
     description <- stri_replace_all_regex(
       description,
-      pattern = c("Ph ", " ph ", "mg/l", "ntu ", " deg c ", "ppt ", " % per", "ug/l", "secchi", " pcu ", " ph. "),
-      replacement = c("pH ", " pH ", "mg/L", "NTU ", "&deg;C ", "PPT ", "% per", "&micro;g/L", "Secchi", " PCU ", " pH. "),
+      pattern = c("Ph ", " ph ", "mg/l", "ntu ", " deg c ", " % per", "ug/l", "secchi", " pcu ", " ph. "),
+      replacement = c("pH ", " pH ", "mg/L", "NTU ", "&deg;C ", "% per", "&micro;g/L", "Secchi", " PCU ", " pH. "),
       vectorize = FALSE
     )
     

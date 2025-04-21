@@ -1,0 +1,201 @@
+---
+output:
+  word_document: default
+html_document:
+  df_print: paged
+---
+
+```{r, warning = FALSE, echo = FALSE, message = FALSE}
+library(data.table)
+library(stringr)
+library(stringi)
+library(glue)
+library(dplyr)
+library(openxlsx)
+library(english)
+
+knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
+
+# Import oyster overall stats
+oyster <- fread("../../../SEACAR_Trend_Analyses/Oyster/output/Oyster_All_GLMM_Stats.txt") %>% distinct()
+
+# Create Period of Record column
+# oyster <- oyster[, `:=` (Period = paste0(EarliestYear, " - ", LatestYear))]
+
+# Import WebsiteParameters.csv
+websiteParams <- fread("data/WebsiteParameters.csv")
+
+```
+
+```{r, wc_oyster_trend_templates}
+## Text should follow this format:
+## The median annual number of taxa was {median} based on {sample count} observations collected by {gear type} between {start year} and {end year}.
+```
+
+```{r generate_description_function}
+generate_oyster_description <- function(filtered_oy, parameter){
+  # Percent Live and Density statements
+  if(parameter %in% c("Percent Live", "Density")){
+    sentences <- c()
+    for(hab_type in unique(filtered_oy$HabitatType)){
+      trend <- !is.na(filtered_oy[HabitatType==hab_type, ModelEstimate])
+      minYear <- filtered_oy[HabitatType==hab_type, EarliestLiveDate]
+      maxYear <- filtered_oy[HabitatType==hab_type, LatestLiveDate]
+      if(minYear==maxYear){
+        yearStatement <- glue("for the year {minYear}")
+      } else {
+        yearStatement <- glue("between {minYear} and {maxYear}")
+      }
+      if(!trend){
+        # No significant change
+        sentence <- glue("On {tolower(hab_type)} reefs, {tolower(parameter)} showed no detectable trend {yearStatement}.")
+      } else {
+        # Increase or decrease
+        increase <- filtered_oy[HabitatType==hab_type, ModelEstimate]>0
+        slope <- round(abs(filtered_oy[HabitatType==hab_type, ModelEstimate]),2)
+        trendStatement <- ifelse(increase, "increased", "decreased")
+        sentence <- glue("On {tolower(hab_type)} reefs, {tolower(parameter)} {trendStatement} by an average of {slope}% per year.")
+      }
+      sentences <- c(sentences, sentence)
+    }
+    return(paste(sentences, collapse = " "))
+  } else {
+    # Shell Height statements
+    habitat_order <- c("Natural", "Restored")
+    trend_order <- c("trends", "no model", "insufficient")
+    
+    sentences <- list()
+    
+    # Loop through habitat types in desired order
+    for(hab_type in habitat_order){
+      if(!hab_type %in% unique(filtered_oy$HabitatType)) next
+      filtered_oy_ht <- filtered_oy[HabitatType == hab_type & !SizeClass == "" & ShellType == "Live Oyster Shells", ] %>%
+        as.data.table()
+      
+      trends <- filtered_oy_ht[ModelEstimate > 0 | ModelEstimate < 0, ]
+      if(nrow(trends)>0){
+        num_inc <- nrow(trends[ModelEstimate > 0])
+        num_dec <- nrow(trends[ModelEstimate < 0])
+        # Diverging trend (one increase, one decrease)
+        if(num_inc>0 & num_dec>0){
+          inc_class <- trends[ModelEstimate > 0, SizeClass]
+          inc_slope <- round(abs(trends[SizeClass==inc_class, ModelEstimate]),2)
+          dec_class <- trends[ModelEstimate < 0, SizeClass]
+          dec_slope <- round(abs(trends[SizeClass==dec_class, ModelEstimate]),2)
+          sentence <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {inc_class} size class increased by {inc_slope}mm per year, and it decreased by {dec_slope}mm per year in the {dec_class} size class.")
+          sentences[[hab_type]][["trends"]] <- sentence
+        } else if(num_inc==1 | num_dec==1) {
+          # Single direction
+          direction <- ifelse(num_inc==1, "increased", "decreased")
+          size_class <- unique(trends$SizeClass)
+          slope <- round(abs(trends[SizeClass==size_class, ModelEstimate]),2)
+          sentence <- glue("For {tolower(hab_type)} reefs, live oyster shell height in the {size_class} size class {direction} annually by {slope}mm on average.")
+          sentences[[hab_type]][["trends"]] <- sentence
+        } else {
+          # Same direction
+          direction <- ifelse(nrow(trends[ModelEstimate > 0])>0, "increased", "decreased")
+          class1 <- sort(unique(trends$SizeClass))[2]
+          slope1 <- round(abs(trends[SizeClass==class1, ModelEstimate]),2)
+          class2 <- sort(unique(trends$SizeClass))[1]
+          slope2 <- round(abs(trends[SizeClass==class2, ModelEstimate]),2)
+          sentence <- glue("For {tolower(hab_type)} reefs, live oyster shell height in the {class1} and {class2} size classes {direction} annually by {slope1}mm and {slope2}mm on average, respectively.")
+          sentences[[hab_type]][["trends"]] <- sentence      
+        }
+      }
+      
+      no_model <- filtered_oy_ht[SufficientData==TRUE & is.na(ModelEstimate), ]
+      insufficient <- filtered_oy_ht[SufficientData==FALSE, ]
+      
+      if(nrow(no_model) > 0){
+        if(nrow(no_model)==1){
+          size_class <- unique(no_model$SizeClass)
+          sentence <- glue("For {tolower(hab_type)} reefs, a model could not be fitted for live oysters in the {size_class} size class.")
+          sentences[[hab_type]][["no model"]] <- sentence
+        } else {
+          class1 = sort(unique(no_model$SizeClass))[2]
+          class2 = sort(unique(no_model$SizeClass))[1]
+          sentence <- glue("For {tolower(hab_type)} reefs, a model could not be fitted for live oysters in either the {class1} or the {class2} size class.")
+          sentences[[hab_type]][["no model"]] <- sentence
+        }
+      }
+      if(nrow(insufficient) > 0){
+        if(nrow(insufficient)==1){
+          size_class <- unique(insufficient$SizeClass)
+          sentence <- glue("For {tolower(hab_type)} reefs, there was insufficient data to calculate a trend for live oysters in the {size_class} size class.")
+          sentences[[hab_type]][["no model"]] <- sentence
+        } else {
+          class1 = sort(unique(insufficient$SizeClass))[2]
+          class2 = sort(unique(insufficient$SizeClass))[1]
+          sentence <- glue("For {tolower(hab_type)} reefs, there was insufficient data to calculate a trend for live oysters in either the {class1} or the {class2} size class.")
+          sentences[[hab_type]][["no model"]] <- sentence
+        }
+      }
+    }
+    
+    if(length(sentences)>0){
+      # Build the final paragraph in the desired order
+      completeStructure <- c()
+      for(ht in habitat_order){
+        for(trend_type in trend_order){
+          if(!is.null(sentences[[ht]][[trend_type]])){
+            completeStructure <- c(completeStructure, sentences[[ht]][[trend_type]])
+          }
+        }
+      }
+      return(paste(completeStructure, collapse = " "))      
+    }
+  }
+}
+```
+
+```{r run_script, results='asis'}
+# Empty table to store results
+descriptionTable <- data.table()
+descriptions <- list()
+# Generate and display descriptions for each MA
+for(ma in unique(oyster$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  for(parameter in oyster[ManagedAreaName==ma, unique(ParameterName)]){
+    if(ma=="Tomoka Marsh Aquatic Preserve" & parameter=="Shell Height") next
+    cat("  \n")
+    cat(glue("## {parameter}"))
+    cat("  \n")
+    filtered_oy <- oyster[ManagedAreaName==ma & ParameterName==parameter, ]
+    description <- paste0("<p>",generate_oyster_description(filtered_oy, parameter),"</p>")
+    # Make substitutions
+    description <- stri_replace_all_regex(
+      description,
+      pattern = c(">75"),
+      replacement = c("&#8805;75"),
+      vectorize = FALSE
+    )
+    
+    # Save description in excel workbook
+    descriptionText <- data.table(
+      "ManagedAreaName" = ma,
+      "Habitat" = "Oyster/Oyster Reef",
+      "Type"= "None",
+      "ParameterName" = parameter,
+      "Description" = description
+    )
+    
+    descriptions[[ma]][[parameter]] <- descriptionText
+    
+    cat(description)
+    cat("  \n")
+  }
+}
+descriptionTable <- bind_rows(descriptionTable, 
+                              rbindlist(unlist(descriptions, recursive = FALSE), use.names = TRUE, fill = TRUE))
+
+descriptionWB <- read.xlsx(paste0("output/Atlas_Descriptions_",
+                                  gsub("_","-",(Sys.Date())), ".xlsx"))
+descriptionWB <- bind_rows(descriptionWB, descriptionTable)
+
+write.xlsx(descriptionWB,
+           file = paste0("output/Atlas_Descriptions_",
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+```

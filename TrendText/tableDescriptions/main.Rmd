@@ -11,10 +11,6 @@ library(openxlsx)
 library(glue)
 
 knitr::opts_chunk$set(warning = FALSE, echo = FALSE, message = FALSE)
-
-wd <- dirname(getActiveDocumentContext()$path)
-setwd(wd)
-
 ```
 
 ```{r display_results, warning = FALSE, echo = FALSE, message = FALSE, results='asis'}
@@ -26,16 +22,17 @@ for(ma in c("Alligator Harbor Aquatic Preserve","Apalachicola Bay Aquatic Preser
   in_coral <- ma %in% all_coral_trends
   in_sav <- ma %in% unique(sav_lme$ManagedAreaName)
   in_cw <- ma %in% unique(cw$ManagedAreaName)
+  in_oyster <- ma %in% unique(oyster$ManagedAreaName)
   
   cat("  \n")
   cat(glue("# {ma}"))
   cat("  \n")
   
   for(habitat in unique(websiteParams$HabitatName)){
-    if(!habitat %in% c("Water Column", "Submerged Aquatic Vegetation", "Coral/Coral Reef", "Coastal Wetlands")) next
     if(habitat=="Coral/Coral Reef" & !in_coral) next
     if(habitat=="Submerged Aquatic Vegetation" & !in_sav) next
     if(habitat=="Coastal Wetlands" & !in_cw) next
+    if(habitat=="Oyster/Oyster Reef" & !in_oyster) next
     cat(glue("## {habitat}"))
     for(indicator in websiteParams[HabitatName==habitat, unique(IndicatorName)]){
       if(indicator=="Nekton" & !in_nekton) next

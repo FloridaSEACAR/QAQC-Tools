@@ -13,6 +13,7 @@ rmarkdown::render("WC_Continuous_TableDescriptions.Rmd")
 rmarkdown::render("WC_Nekton_TableDescriptions.Rmd")
 rmarkdown::render("Coral_TableDescriptions.Rmd")
 rmarkdown::render("CW_TableDescriptions.Rmd")
+rmarkdown::render("Oyster_TableDescriptions.Rmd")
 
 # That output file is then loaded to produce these combined reports
 descTable <- setDT(read.xlsx(paste0("output/Atlas_Descriptions_", 
