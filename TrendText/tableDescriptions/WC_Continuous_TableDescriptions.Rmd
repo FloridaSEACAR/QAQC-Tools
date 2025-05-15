@@ -125,7 +125,7 @@ generate_wc_description <- function(data, parameter) {
         increasing$slope1 <- ifelse(round(increasing$slope1,2)==0.00, "less than 0.01", round(increasing$slope1,2))
         increasing$slope2 <- ifelse(round(increasing$slope2,2)==0.00, "less than 0.01", round(increasing$slope2,2))
         if(increasing$n_stations==2){
-          sentence <- sprintf("At %s program locations, monthly average %s increased by %s %s per year at one site and %s %s per year at the other.", 
+          sentence <- sprintf("At %s program locations, monthly average %s increased by %s %s per year at one site and by %s %s per year at the other.", 
                               english(increasing$n_stations), 
                               display_parameter,
                               increasing$slope1,
@@ -169,7 +169,7 @@ generate_wc_description <- function(data, parameter) {
         decreasing$slope1 <- ifelse(round(decreasing$slope1,2)==0.00, "less than 0.01", round(decreasing$slope1,2))
         decreasing$slope2 <- ifelse(round(decreasing$slope2,2)==0.00, "less than 0.01", round(decreasing$slope2,2))
         if(decreasing$n_stations==2){
-          sentence <- sprintf("At %s program locations, monthly average %s decreased by %s %s per year at one site and %s %s per year at the other.", 
+          sentence <- sprintf("At %s program locations, monthly average %s decreased by %s %s per year at one site and by %s %s per year at the other.", 
                               english(decreasing$n_stations), 
                               display_parameter,
                               decreasing$slope1,
