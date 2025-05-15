@@ -67,20 +67,21 @@ generate_coral_description_pc <- function(data){
   min_year <- data$EarliestYear
   max_year <- data$LatestYear
   slope <- ifelse(round(data$LME_Slope, 2)==0.00, "less than 0.01", round(data$LME_Slope, 2))
+  time_period <- ifelse(min_year==max_year, "", glue(" between {min_year} and {max_year}"))
   if(str_detect(trend, "Insufficient")){
-    sentence <- glue("There was insufficient data to determine a trend between {min_year} and {max_year}.")
+    sentence <- glue("There was insufficient data to determine a trend{time_period}.")
   }
   if(str_detect(trend, "Model did not fit")){
-    model_result <- glue("The model did not fit the available data between {min_year} and {max_year}.")
+    model_result <- glue("The model did not fit the available data{time_period}.")
   }
   if(str_detect(trend, "No significant")){
-    sentence <- glue("Percent cover showed no detectable trend between {min_year} and {max_year}.")
+    sentence <- glue("Percent cover showed no detectable trend{time_period}.")
   }
   if(str_detect(trend, "Significantly increasing")){
-    sentence <- glue("Percent cover increased by an average of {slope}% per year between {min_year} and {max_year}.")
+    sentence <- glue("Annual average percent cover increased by {slope}%.")
   }
   if(str_detect(trend, "Significantly decreasing")){
-    sentence <- glue("Percent cover decreased by an average of {slope}% per year between {min_year} and {max_year}.")
+    sentence <- glue("Annual average percent cover decreased by {slope}%{time_period}.")
   }
   return(sentence)
 }
@@ -95,7 +96,12 @@ generate_coral_description_sr <- function(data){
   min_year <- data$EarliestYear
   max_year <- data$LatestYear
   
-  sentence <- glue("The median annual number of taxa was {median} based on {n_data} observations collected between {min_year} and {max_year}.")
+  obs_wording <- ifelse(n_data>1, glue("{n_data} observations"), glue("{n_data} observation"))
+  if(min_year==max_year){
+    sentence <- glue("In the year {min_year}, {median} taxa were observed based on {obs_wording}.")
+  } else {
+    sentence <- glue("The median annual number of taxa was {median} based on {n_data} observations collected between {min_year} and {max_year}.")
+  }
   
   return(sentence)
 }
@@ -124,8 +130,9 @@ for(ma in all_coral_trends){
     # Save description in excel workbook
     descriptionText <- data.table(
       "ManagedAreaName" = ma,
-      "Habitat" = "Coral/Coral Reef",
-      "Type"= indicator,
+      "HabitatName" = "Coral/Coral Reef",
+      "IndicatorName"= indicator,
+      "SamplingFrequency" = "None",
       "ParameterName" = "Presence/Absence",
       "Description" = description
     )
@@ -144,8 +151,9 @@ for(ma in all_coral_trends){
     # Save description in excel workbook
     descriptionText <- data.table(
       "ManagedAreaName" = ma,
-      "Habitat" = "Coral/Coral Reef",
-      "Type"= indicator,
+      "HabitatName" = "Coral/Coral Reef",
+      "IndicatorName"= indicator,
+      "SamplingFrequency" = "None",
       "ParameterName" = "Percent Cover",
       "Description" = description
     )

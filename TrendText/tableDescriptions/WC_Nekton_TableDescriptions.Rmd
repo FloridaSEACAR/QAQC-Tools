@@ -60,7 +60,7 @@ if(two_geartypes){
 ```{r run_script, results='asis'}
 # Overall trends table to derive text from
 all_nekton_trends <- nekton %>% 
-  mutate(GearTypeSize = paste0(GearSize_m, " m ", GearType)) %>%
+  mutate(GearTypeSize = paste0(GearSize_m, "-meter ", GearType)) %>%
   group_by(ManagedAreaName, ParameterName, GearType, GearSize_m, GearTypeSize, 
            EarliestYear, LatestYear, Median, N_Data) %>%
   summarise(.groups="keep") %>% as.data.table()
@@ -86,8 +86,9 @@ for(ma in unique(all_nekton_trends$ManagedAreaName)){
   # Save description in excel workbook
   descriptionText <- data.table(
     "ManagedAreaName" = ma,
-    "Habitat" = "Water Column",
-    "Type"= "Nekton",
+    "HabitatName" = "Water Column",
+    "IndicatorName"= "Nekton",
+    "SamplingFrequency" = "None",
     "ParameterName" = "Presence/Absence",
     "Description" = description
   )

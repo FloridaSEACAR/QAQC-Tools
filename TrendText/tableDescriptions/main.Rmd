@@ -50,17 +50,17 @@ for(ma in c("Alligator Harbor Aquatic Preserve","Apalachicola Bay Aquatic Preser
         
         if(indicator %in% c("Water Quality", "Water Clarity", "Nekton")){
           if(indicator=="Nekton"){
-            descText <- descTable[ManagedAreaName==ma & Type == "Nekton", Description]
+            descText <- descTable[ManagedAreaName==ma & IndicatorName == "Nekton", Description]
             cat(glue("#### {parameter}"))
           } else {
-            descText <- descTable[ManagedAreaName==ma & ParameterName==parameter & Type == type, Description]
+            descText <- descTable[ManagedAreaName==ma & ParameterName==parameter & IndicatorName == indicator & SamplingFrequency == type, Description]
             cat(glue("#### {parameter} - {type}"))
           }
         } else if(habitat=="Submerged Aquatic Vegetation" & indicator=="Percent Cover"){
-          descText <- descTable[ManagedAreaName==ma & Habitat==habitat, Description]
+          descText <- descTable[ManagedAreaName==ma & HabitatName==habitat, Description]
           cat(glue("#### {parameter}"))
         } else if(habitat=="Coral/Coral Reef") {
-          descText <- descTable[ManagedAreaName==ma & ParameterName==parameter & Type == indicator, Description]
+          descText <- descTable[ManagedAreaName==ma & ParameterName==parameter & IndicatorName == indicator, Description]
           cat(glue("#### {parameter}"))
         } else {
           descText <- descTable[ManagedAreaName==ma & ParameterName==parameter, Description]

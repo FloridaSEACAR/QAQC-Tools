@@ -57,7 +57,7 @@ setDT(websiteParams)
 ## Increasing statement: At {N} program location(s), {Parameter} increased between {lower end sen}% and {upper end sen}% per year.
 ## Decreasing statement: At {N} locations there was a decrease between {lower end}% and {upper end}% per year.
 ## No significant trend: {N} locations showed no change in {Parameter}.
-## No model: A statistical model could not be fitted for {N} stations.
+## No model: A model could not be fitted for {N} stations.
 ```
 
 ```{r generate_description_function}
@@ -106,20 +106,41 @@ generate_wc_description <- function(data, parameter) {
     if(singular){
       increasing$min_slope <- ifelse(increasing$min_slope==0.00, "less than 0.01", increasing$min_slope)
       if(class(increasing$min_slope)=="character"){
-        sentence <- sprintf("At %s program location, %s increased by %s %s per year.", 
+        sentence <- sprintf("At %s program location, monthly average %s increased by %s %s per year.", 
                             english(increasing$n_stations), display_parameter, increasing$min_slope, units)        
       } else {
-        sentence <- sprintf("At %s program location, %s increased by %.2f %s per year.", 
+        sentence <- sprintf("At %s program location, monthly average %s increased by %.2f %s per year.", 
                             english(increasing$n_stations), display_parameter, increasing$min_slope, units)            
       }
       sentences <- c(sentences, sentence)
     } else {
-      sentence <- sprintf("At %s program locations, %s increased between %.2f and %.2f %s per year.", 
-                          english(increasing$n_stations), 
-                          display_parameter, 
-                          increasing$slope1,
-                          increasing$slope2, 
-                          units)
+      # Make exception for when the slopes are the same and only 2 stations
+      if(increasing$slope1 == increasing$slope2 & increasing$n_stations==2){
+        sentence <- sprintf("At %s program locations, monthly average %s increased by %.2f %s per year.", 
+                            english(increasing$n_stations), 
+                            display_parameter, 
+                            increasing$slope1,
+                            units)
+      } else {
+        increasing$slope1 <- ifelse(round(increasing$slope1,2)==0.00, "less than 0.01", round(increasing$slope1,2))
+        increasing$slope2 <- ifelse(round(increasing$slope2,2)==0.00, "less than 0.01", round(increasing$slope2,2))
+        if(increasing$n_stations==2){
+          sentence <- sprintf("At %s program locations, monthly average %s increased by %s %s per year at one site and %s %s per year at the other.", 
+                              english(increasing$n_stations), 
+                              display_parameter,
+                              increasing$slope1,
+                              units,
+                              increasing$slope2,
+                              units)
+        } else {
+          sentence <- sprintf("At %s program locations, monthly average %s increased between %s and %s %s per year.", 
+                              english(increasing$n_stations), 
+                              display_parameter, 
+                              increasing$slope1,
+                              increasing$slope2, 
+                              units)
+        }
+      }
       sentences <- c(sentences, sentence)
     }
   }
@@ -129,20 +150,41 @@ generate_wc_description <- function(data, parameter) {
     if(singular){
       decreasing$min_slope <- ifelse(decreasing$min_slope==0.00, "less than 0.01", decreasing$min_slope)
       if(class(decreasing$min_slope)=="character"){
-        sentence <- sprintf("At %s program location, %s increased by %s %s per year.", 
+        sentence <- sprintf("At %s program location, monthly average %s decreased by %s %s per year.", 
                             english(decreasing$n_stations), display_parameter, decreasing$min_slope, units)        
       } else {
-        sentence <- sprintf("At %s program location, %s increased by %.2f %s per year.", 
+        sentence <- sprintf("At %s program location, monthly average %s decreased by %.2f %s per year.", 
                             english(decreasing$n_stations), display_parameter, decreasing$min_slope, units)            
       }
       sentences <- c(sentences, sentence)
     } else {
-      sentence <- sprintf("At %s locations there was a decrease in %s between %.2f and %.2f %s per year.", 
-                          english(decreasing$n_stations), 
-                          display_parameter, 
-                          decreasing$slope1,
-                          decreasing$slope2,
-                          units)
+      # Make exception for when the slopes are the same and only 2 stations
+      if(decreasing$slope1 == decreasing$slope2 & decreasing$n_stations==2){
+        sentence <- sprintf("At %s program locations, monthly average %s decreased by %.2f %s per year.", 
+                            english(decreasing$n_stations), 
+                            display_parameter, 
+                            decreasing$slope1,
+                            units)
+      } else {
+        decreasing$slope1 <- ifelse(round(decreasing$slope1,2)==0.00, "less than 0.01", round(decreasing$slope1,2))
+        decreasing$slope2 <- ifelse(round(decreasing$slope2,2)==0.00, "less than 0.01", round(decreasing$slope2,2))
+        if(decreasing$n_stations==2){
+          sentence <- sprintf("At %s program locations, monthly average %s decreased by %s %s per year at one site and %s %s per year at the other.", 
+                              english(decreasing$n_stations), 
+                              display_parameter,
+                              decreasing$slope1,
+                              units,
+                              decreasing$slope2,
+                              units)
+        } else {
+          sentence <- sprintf("At %s program locations, monthly average %s decreased between %s and %s %s per year.", 
+                              english(decreasing$n_stations), 
+                              display_parameter,
+                              decreasing$slope1,
+                              decreasing$slope2,
+                              units)
+        }
+      }
       sentences <- c(sentences, sentence)
     }
   }
@@ -150,10 +192,10 @@ generate_wc_description <- function(data, parameter) {
   if(nrow(no_change)>0){
     singular <- no_change$n_stations==1
     if(singular){
-      sentence <- sprintf("No detectable change in %s was observed at %s location.", 
+      sentence <- sprintf("No detectable change in monthly average %s was observed at %s location.", 
                           display_parameter, english(no_change$n_stations))
     } else {
-      sentence <- sprintf("No detectable change in %s was observed at %s locations.", 
+      sentence <- sprintf("No detectable change in monthly average %s was observed at %s locations.", 
                           display_parameter, english(no_change$n_stations))
     }
     sentences <- c(sentences, sentence)
@@ -162,11 +204,11 @@ generate_wc_description <- function(data, parameter) {
   if(nrow(insufficient)>0){
     singular <- insufficient$n_stations==1
     if(singular){
-      sentence <- sprintf("A statistical model could not be fitted for %s station.", 
+      sentence <- sprintf("There was insufficient data to fit a model for %s location.", 
                           english(insufficient$n_stations))
       sentences <- c(sentences, sentence)       
     } else {
-      sentence <- sprintf("A statistical model could not be fitted for %s stations.", 
+      sentence <- sprintf("There was insufficient data to fit a model for %s locations.", 
                           english(insufficient$n_stations))
       sentences <- c(sentences, sentence) 
     }
@@ -188,6 +230,7 @@ for(ma in unique(cont$ManagedAreaName)){
   filtered_cont <- cont[ManagedAreaName==ma, ]
   descriptions <- list()
   for(parameter in unique(filtered_cont$ParameterName)){
+    indicator <- websiteParams[ParameterName==parameter, unique(IndicatorName)]
     cat("  \n")
     cat(glue("## {parameter}"))
     cat("  \n")
@@ -196,16 +239,17 @@ for(ma in unique(cont$ManagedAreaName)){
     # Apply alterations to final display of
     description <- stri_replace_all_regex(
       description,
-      pattern = c(" ph", "mg/l", "ntu ", " deg c ", "ppt ", " % per"),
-      replacement = c(" pH", "mg/L", "NTU ", "&deg;C ", "PPT ", "% per"),
+      pattern = c(" ph", "mg/l", "ntu ", " deg c ", " % per"),
+      replacement = c(" pH", "mg/L", "NTU ", "&deg;C ", "% per"),
       vectorize = FALSE
     )
     
     # Save description in excel workbook
     descriptionText <- data.table(
       "ManagedAreaName" = ma,
-      "Habitat" = "Water Column",
-      "Type"= "Continuous",
+      "HabitatName" = "Water Column",
+      "IndicatorName"= indicator,
+      "SamplingFrequency" = "Continuous",
       "ParameterName" = parameter,
       "Description" = description
     )

@@ -57,7 +57,7 @@ generate_wc_description <- function(data, parameter, indicator){
   data$SennSlope <- ifelse(round(data$SennSlope,2)==0.00, "less than 0.01", 
                            round(data$SennSlope,2))
   p_subset <- data[ParameterName==parameter, ]
-  units <- websiteParams[ParameterName==parameter, unique(ParameterUnits)]
+  units <- ifelse(parameter=="pH", "pH units", websiteParams[ParameterName==parameter, unique(ParameterUnits)])
   
   increasing <- p_subset[str_detect(tolower(StatisticalTrend), "increasing"), ]
   decreasing <- p_subset[str_detect(tolower(StatisticalTrend), "decreasing"), ]
@@ -72,15 +72,15 @@ generate_wc_description <- function(data, parameter, indicator){
     if(indicator=="Water Clarity"){
       wc_trend <- "a decrease"
       if(parameter=="Secchi Depth"){
-        sentence <- sprintf("%s became shallower by an average of %s %s per year, indicating %s in water clarity.", 
+        sentence <- sprintf("Monthly average %s became shallower by %s %s per year, indicating %s in water clarity.", 
                             display_parameter, increasing$SennSlope, units, wc_trend)
       } else {
-        sentence <- sprintf("%s increased by an average of %s %s per year, indicating %s in water clarity.", 
+        sentence <- sprintf("Monthly average %s increased by %s %s per year, indicating %s in water clarity.", 
                             display_parameter, increasing$SennSlope, units, wc_trend)
       }
       sentences <- c(sentences, sentence)
     } else {
-      sentence <- sprintf("%s increased by an average of %s %s per year.", 
+      sentence <- sprintf("Monthly average %s increased by %s %s per year.", 
                           display_parameter, increasing$SennSlope, units)
       sentences <- c(sentences, sentence)
     }
@@ -90,15 +90,15 @@ generate_wc_description <- function(data, parameter, indicator){
     if(indicator=="Water Clarity"){
       wc_trend <- "an increase"
        if(parameter=="Secchi Depth"){
-        sentence <- sprintf("%s became deeper by an average of %s %s per year, indicating %s in water clarity.", 
+        sentence <- sprintf("Monthly average %s became deeper by %s %s per year, indicating %s in water clarity.", 
                             display_parameter, decreasing$SennSlope, units, wc_trend)
        } else {
-        sentence <- sprintf("%s decreased by an average of %s %s per year, indicating %s in water clarity.", 
+        sentence <- sprintf("Monthly average %s decreased by %s %s per year, indicating %s in water clarity.", 
                             display_parameter, decreasing$SennSlope, units, wc_trend)
        }
       sentences <- c(sentences, sentence)     
     } else {
-      sentence <- sprintf("%s decreased by an average of %s %s per year.", 
+      sentence <- sprintf("Monthly average %s decreased by %s %s per year.", 
                           display_parameter, decreasing$SennSlope, units)
       sentences <- c(sentences, sentence)      
     }
@@ -111,7 +111,7 @@ generate_wc_description <- function(data, parameter, indicator){
   }
   
   if(nrow(insufficient)>0){
-    sentence <- sprintf("A statistical model could not be fitted for %s.", 
+    sentence <- sprintf("There was insufficient data to fit a model for %s.", 
                         display_parameter)
     sentences <- c(sentences, sentence)
   }
@@ -149,16 +149,17 @@ for(ma in unique(all_disc_trends$ManagedAreaName)){
     # Apply alterations to final display of
     description <- stri_replace_all_regex(
       description,
-      pattern = c("Ph ", " ph ", "mg/l", "ntu ", " deg c ", " % per", "ug/l", "secchi", " pcu ", " ph. "),
-      replacement = c("pH ", " pH ", "mg/L", "NTU ", "&deg;C ", "% per", "&micro;g/L", "Secchi", " PCU ", " pH. "),
+      pattern = c("Ph ", " ph ", "mg/l", "ntu ", " deg c ", " % per", "ug/l", "secchi", " pcu ", " ph\\.", "pheophytin "),
+      replacement = c("pH ", " pH ", "mg/L", "NTU ", "&deg;C ", "% per", "&micro;g/L", "Secchi", " PCU ", " pH.", "pheophytin, "),
       vectorize = FALSE
     )
     
     # Save description in excel workbook
     descriptionText <- data.table(
       "ManagedAreaName" = ma,
-      "Habitat" = "Water Column",
-      "Type"= "Discrete",
+      "HabitatName" = "Water Column",
+      "IndicatorName"= indicator,
+      "SamplingFrequency" = "Discrete",
       "ParameterName" = parameter,
       "Description" = description
     )

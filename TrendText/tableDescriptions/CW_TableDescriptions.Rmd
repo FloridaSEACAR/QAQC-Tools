@@ -43,8 +43,12 @@ generate_cw_description <- function(data){
     n_data <- data[i]$N_Data
     min_year <- data[i]$EarliestYear
     max_year <- data[i]$LatestYear
-    
-    sentence <- glue("Between {min_year} and {max_year}, the median annual number of species for <i>{sp}</i> was {median} based on {n_data} observations.")
+    obs_wording <- ifelse(n_data>1, glue("{n_data} observations"), glue("{n_data} observation"))
+    if(min_year==max_year){
+      sentence <- glue("In the year {min_year}, {median} species were observed for <i>{sp}</i> based on {obs_wording}.")
+    } else {
+      sentence <- glue("Between {min_year} and {max_year}, the median annual number of species for <i>{sp}</i> was {median} based on {obs_wording}.")
+    }
     sentences <- c(sentences, sentence)
   }
   
@@ -70,8 +74,9 @@ for(ma in unique(cw$ManagedAreaName)){
   # Save description in excel workbook
   descriptionText <- data.table(
     "ManagedAreaName" = ma,
-    "Habitat" = "Coastal Wetlands",
-    "Type"= indicator,
+    "HabitatName" = "Coastal Wetlands",
+    "IndicatorName" = indicator,
+    "SamplingFrequency" = "None",
     "ParameterName" = parameter,
     "Description" = description
   )

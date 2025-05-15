@@ -99,29 +99,29 @@ generate_sav_description <- function(data) {
   ## Increasing
   if (length(increasing) == 1) {
     s <- increasing[[1]]
-    sentences <- c(sentences, sprintf("An annual increase in percent cover was observed in %s (%.1f%%).", s$species, s$slope))
+    sentences <- c(sentences, sprintf("An annual increase in percent cover was observed for %s (%.1f%%).", s$species, s$slope))
   } else if (length(increasing) == 2) {
     parts <- sapply(increasing, function(s) sprintf("%s (%.1f%%)", s$species, s$slope))
-    sentences <- c(sentences, sprintf("Annual increases in percent cover were observed in %s and %s.", parts[1], parts[2]))
+    sentences <- c(sentences, sprintf("Annual increases in percent cover were observed for %s and %s.", parts[1], parts[2]))
   } else if (length(increasing) > 2) {
     parts <- sapply(increasing, function(s) sprintf("%s (%.1f%%)", s$species, s$slope))
     species_list <- paste(parts[1:(length(parts)-1)], collapse = ", ")
     species_list <- paste0(species_list, ", and ", parts[[length(parts)]])
-    sentences <- c(sentences, sprintf("Annual increases in percent cover were observed in %s.", species_list))
+    sentences <- c(sentences, sprintf("Annual increases in percent cover were observed for %s.", species_list))
   }
   
   ## Decreasing
   if (length(decreasing) == 1) {
     s <- decreasing[[1]]
-    sentences <- c(sentences, sprintf("An annual decrease in percent cover was observed in %s (%.1f%%).", s$species, s$slope))
+    sentences <- c(sentences, sprintf("An annual decrease in percent cover was observed for %s (%.1f%%).", s$species, s$slope))
   } else if (length(decreasing) == 2) {
     parts <- sapply(decreasing, function(s) sprintf("%s (%.1f%%)", s$species, s$slope))
-    sentences <- c(sentences, sprintf("Annual decreases in percent cover were observed in %s and %s.", parts[1], parts[2]))
+    sentences <- c(sentences, sprintf("Annual decreases in percent cover were observed for %s and %s.", parts[1], parts[2]))
   } else if (length(decreasing) > 2) {
     parts <- sapply(decreasing, function(s) sprintf("%s (%.1f%%)", s$species, s$slope))
     species_list <- paste(parts[1:(length(parts)-1)], collapse = ", ")
     species_list <- paste0(species_list, ", and ", parts[[length(parts)]])
-    sentences <- c(sentences, sprintf("Annual decreases in percent cover were observed in %s.", species_list))
+    sentences <- c(sentences, sprintf("Annual decreases in percent cover were observed for %s.", species_list))
   }
   
   ## No change
@@ -129,10 +129,10 @@ generate_sav_description <- function(data) {
     min_yr <- min(min_years)
     max_yr <- max(max_years)
     if (length(no_change) == 1) {
-      sentences <- c(sentences, sprintf("No detectable change in percent cover was observed in %s.", no_change[[1]]))
+      sentences <- c(sentences, sprintf("No detectable change in percent cover was observed for %s.", no_change[[1]]))
     } else if (length(no_change) == 2) {
       sentences <- c(sentences, 
-                     sprintf("No detectable change in percent cover was observed in %s and %s.", 
+                     sprintf("No detectable change in percent cover was observed for %s and %s.", 
                              no_change[[1]], no_change[[2]]))
     } else {
       species_list <- paste(no_change[1:(length(no_change)-1)], collapse = ", ")
@@ -145,35 +145,35 @@ generate_sav_description <- function(data) {
   # If both Insufficient and Model_not_fit have results, combine into single sentence
   if (length(insufficient) > 0) {
     if (length(insufficient) == 1) {
-      insufficient_sentence <- sprintf("Trends could not be evaluated for %s due to insufficient data", insufficient[1])
+      insufficient_sentence <- sprintf("Trends in percent cover could not be evaluated for %s due to insufficient data", insufficient[1])
     } else if (length(insufficient) == 2) {
-      insufficient_sentence <- sprintf("Trends could not be evaluated for %s and %s due to insufficient data", insufficient[1], insufficient[2])
+      insufficient_sentence <- sprintf("Trends in percent cover could not be evaluated for %s and %s due to insufficient data", insufficient[1], insufficient[2])
     } else {
       species_list <- paste(insufficient[1:(length(insufficient)-1)], collapse = ", ")
       species_list <- paste0(species_list, ", and ", insufficient[length(insufficient)])
-      insufficient_sentence <- sprintf("Trends could not be evaluated for %s due to insufficient data", species_list)
+      insufficient_sentence <- sprintf("Trends in percent cover could not be evaluated for %s due to insufficient data", species_list)
     }
   }
   
   if (length(model_not_fit) > 0) {
     if (length(model_not_fit) == 1) {
-      no_model_sentence <- sprintf("model could not be fitted for %s.", model_not_fit[1])
+      no_model_sentence <- sprintf("the model could not be fitted for %s.", model_not_fit[1])
     } else if (length(model_not_fit) == 2) {
-      no_model_sentence <- sprintf("model could not be fitted for %s and %s.", model_not_fit[1], model_not_fit[2])
+      no_model_sentence <- sprintf("a model could not be fitted for %s and %s.", model_not_fit[1], model_not_fit[2])
     } else {
       species_list <- paste(model_not_fit[1:(length(model_not_fit)-1)], collapse = ", ")
       species_list <- paste0(species_list, ", and ", model_not_fit[length(model_not_fit)])
-      no_model_sentence <- sprintf("model could not be fitted for %s.", species_list)
+      no_model_sentence <- sprintf("a model could not be fitted for %s.", species_list)
     }
   }
   
   if(length(insufficient)>0 & length(model_not_fit)>0){
-    combined_sentence <- paste0(insufficient_sentence, ", and a ", no_model_sentence)
+    combined_sentence <- paste0(insufficient_sentence, ", and ", no_model_sentence)
     sentences <- c(sentences, combined_sentence)
   } else if(length(insufficient)>0){
     sentences <- c(sentences, paste0(insufficient_sentence,"."))
   } else if(length(model_not_fit)>0){
-    sentences <- c(sentences, paste0("A ",no_model_sentence))
+    sentences <- c(sentences, paste0(no_model_sentence))
   }
 
   return(paste(str_to_sentence(sentences), collapse = " "))
@@ -196,8 +196,8 @@ for(ma in unique(sav_lme$ManagedAreaName)){
   # Apply alterations to final display of species names (including italics)
   description <- stri_replace_all_regex(
     description,
-    pattern = c("total sav", "Total sav", "halophila, unk.", "Halophila, unk.","halophila spp.", "Halophila spp."),
-    replacement = c("total SAV", "Total SAV", "unknown <i>Halophila</i>", "unknown <i>Halophila</i>", "<i>Halophila</i> spp.", "<i>Halophila</i> spp."),
+    pattern = c("total sav", "Total sav", "halophila, unk.", "Halophila, unk.","halophila spp.", "Halophila spp.", "spp\\.\\."),
+    replacement = c("total SAV", "Total SAV", "unknown <i>Halophila</i>", "unknown <i>Halophila</i>", "<i>Halophila</i> spp.", "<i>Halophila</i> spp.", "spp."),
     vectorize = FALSE
   )
   
@@ -207,9 +207,10 @@ for(ma in unique(sav_lme$ManagedAreaName)){
   # Save description in excel workbook
   descriptionText <- data.table(
     "ManagedAreaName" = ma,
-    "Habitat" = "Submerged Aquatic Vegetation",
-    "Type"= "None",
-    "ParameterName" = "Percent Cover (by species)",
+    "HabitatName" = "Submerged Aquatic Vegetation",
+    "IndicatorName"= "Percent Cover (by species)",
+    "SamplingFrequency" = "None",
+    "ParameterName" = "Percent Cover",
     "Description" = description
   )
   

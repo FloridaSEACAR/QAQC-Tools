@@ -18,6 +18,33 @@ rmarkdown::render("Oyster_TableDescriptions.Rmd")
 # That output file is then loaded to produce these combined reports
 descTable <- setDT(read.xlsx(paste0("output/Atlas_Descriptions_", 
                                     gsub("_","-",(Sys.Date())), ".xlsx")))
+
+# Ensure that "None" entries in "SamplingFrequency" column are rendered as NA in final output
+descTable$SamplingFrequency[descTable$SamplingFrequency=="None"] <- NA
+
+# Add ParameterVisId values in case they are needed for Atlas deployment
+figCaps <- openxlsx::read.xlsx("data/AtlasFigureCaptions_Final.xlsx") %>%
+  select(-c("Website", "FigureCaptions"))
+figCaps$IndicatorName[figCaps$IndicatorName=="Percent Cover" & 
+                        figCaps$HabitatName=="Submerged Aquatic Vegetation"] <- "Percent Cover (by species)"
+
+# Combine ParameterVisId into final output file
+descTable <- merge(descTable, figCaps, all.x = T)
+
+# Add MA AreaID into final output file
+MA_All <- fread("data/ManagedArea.csv")
+# Temporary re-naming of Southeast Florida Coral Reef Ecosystem Conservation Area & St. Andrews
+descTable$ManagedAreaName[descTable$ManagedAreaName=="Southeast Florida Coral Reef Ecosystem Conservation Area"] <- "Kristin Jacobs Coral Aquatic Preserve"
+descTable$ManagedAreaName[descTable$ManagedAreaName=="St. Andrews State Park Aquatic Preserve"] <- "St. Andrews Aquatic Preserve"
+
+descTable <- merge(MA_All[, c("ManagedAreaName", "AreaID")], descTable, by = "ManagedAreaName", all.y = T)
+
+# Export output file
+write.xlsx(descTable,
+           file = paste0("output/Atlas_Descriptions_",
+                         gsub("_","-",(Sys.Date())), ".xlsx"),
+           asTable = T)
+
 # Import WebsiteParameters.csv
 websiteParams <- fread("data/WebsiteParameters.csv")
 # Correct order of websiteParams to match format from the Atlas
