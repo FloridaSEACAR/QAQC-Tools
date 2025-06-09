@@ -1,0 +1,63 @@
+---
+date: '`r Sys.Date()`'
+title: "Status and Trends"
+output:
+  html_document:
+    toc: TRUE
+    toc_float: TRUE
+---
+
+```{r settings, message=FALSE, warning=FALSE, echo=FALSE}
+options(scipen=999)
+knitr::opts_chunk$set(
+   warning=FALSE,
+   message=FALSE,
+   echo=FALSE,
+   dpi=200,
+   fig.pos = 'H',
+   cache=FALSE
+   )
+```
+
+```{r renderResults, results='asis'}
+library(glue)
+library(data.table)
+library(tidyverse)
+library(openxlsx)
+library(knitr)
+library(kableExtra)
+
+# Read in final trend statements excel file
+trends <- openxlsx::read.xlsx(paste0("output/TrendStatusText_Final", Sys.Date(), ".xlsx")) %>% 
+  filter(Website==1)
+# Function to assign icons for each trend type (1, 0, -1, NA)
+apply_icons <- function(trend){
+  if(is.na(trend)){
+    "data/icons/insuff-data.png"
+  } else if(trend==1){
+    "data/icons/increase-medium-icon.png"
+  } else if(trend==-1){
+    "data/icons/decrease-medium-icon.png"
+  } else if(trend==0){
+    "data/icons/no-trend-medium-icon.png"
+  }
+}
+# Apply function
+trends <- trends %>% rowwise() %>% mutate(icon = apply_icons(Trend))
+
+for(ma in unique(trends$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  table <- trends %>% filter(ManagedAreaName==ma) %>%
+    select(-c("ManagedAreaName","AreaID","SufficientData", "Trend", "Website", "Region"))
+  table$Trend <- ""
+  kable <- table %>% 
+    select(-c("icon")) %>%
+    kable(format = "html", escape = F) %>%
+    kableExtra::kable_styling(latex_options = c("scale_down", "HOLD_position")) %>%
+    column_spec(4, image = spec_image(table$icon, 100, 100))
+  print(kable)
+  cat("  \n")
+}
+```

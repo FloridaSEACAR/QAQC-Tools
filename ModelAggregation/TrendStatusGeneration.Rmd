@@ -1,0 +1,724 @@
+---
+title: "Status and Trends Text"
+author: "SEACAR"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(data.table)
+library(tidyverse)
+library(glue)
+library(english)
+library(stringi)
+
+# Function to maintain decimal rounding for use with formatC (below) when adding 'big mark' commas for larger values
+trunc2 <- function(x, d) trunc(x * 10 ^ d) / 10 ^ d
+
+knitr::opts_chunk$set(echo = FALSE)
+# Discrete aggregate results (water clarity + nutrients)
+disc_results <- openxlsx::read.xlsx("output/WQ_agg_results.xlsx") %>% 
+  mutate(ManagedAreaName = case_when(ManagedAreaName == "Southeast Florida Coral Reef Ecosystem Conservation Area" ~ "Kristin Jacobs Coral Aquatic Preserve",
+                                     ManagedAreaName == "St. Andrews State Park Aquatic Preserve" ~ "St. Andrews Aquatic Preserve",
+                                     .default = ManagedAreaName)) %>%
+  as.data.table()
+# Individual discrete results for water quality
+disc_wq_trends <- fread("../../SEACAR_Trend_Analyses/WQ_Cont_Discrete/output/WQ_Discrete_All_KendallTau_Stats.csv") %>%
+  filter(Website==1, ParameterName %in% c("Dissolved Oxygen"), !is.na(Trend))
+sav_results <- openxlsx::read.xlsx("output/all_SAV_MA_Results.xlsx") %>% 
+  mutate(ManagedAreaName = case_when(ManagedAreaName == "Southeast Florida Coral Reef Ecosystem Conservation Area" ~ "Kristin Jacobs Coral Aquatic Preserve",
+                                     ManagedAreaName == "St. Andrews State Park Aquatic Preserve" ~ "St. Andrews Aquatic Preserve",
+                                     .default = ManagedAreaName)) %>%
+  as.data.table()
+
+nekton_results <- fread("../../SEACAR_Trend_Analyses/Nekton/output/Nekton_SpeciesRichness_MA_Overall_Stats.txt")
+nekton_results_byYear <- fread("../../SEACAR_Trend_Analyses/Nekton/output/Nekton_SpeciesRichness_MA_Yr_Stats.txt")
+cw_results <- fread("../../SEACAR_Trend_Analyses/Coastal_Wetlands/output/CoastalWetlands_SpeciesRichness_MA_Overall_Stats.txt")
+cw_results_byYear <- fread("../../SEACAR_Trend_Analyses/Coastal_Wetlands/output/CoastalWetlands_SpeciesRichness_MA_Yr_Stats.txt")
+coral_sr_results <- fread("../../SEACAR_Trend_Analyses/Coral/output/SpeciesRichness/Coral_SpeciesRichness_MA_Overall_Stats.txt") %>%
+  mutate(ManagedAreaName = case_when(ManagedAreaName == "Southeast Florida Coral Reef Ecosystem Conservation Area" ~ "Kristin Jacobs Coral Aquatic Preserve",
+                                     ManagedAreaName == "St. Andrews State Park Aquatic Preserve" ~ "St. Andrews Aquatic Preserve",
+                                     .default = ManagedAreaName)) %>%
+  as.data.table()
+coral_sr_results_byYear <- fread("../../SEACAR_Trend_Analyses/Coral/output/SpeciesRichness/Coral_SpeciesRichness_MA_Yr_Stats.txt") %>%
+  mutate(ManagedAreaName = case_when(ManagedAreaName == "Southeast Florida Coral Reef Ecosystem Conservation Area" ~ "Kristin Jacobs Coral Aquatic Preserve",
+                                     ManagedAreaName == "St. Andrews State Park Aquatic Preserve" ~ "St. Andrews Aquatic Preserve",
+                                     .default = ManagedAreaName)) %>%
+  as.data.table()
+coral_pc_results <- fread("../../SEACAR_Trend_Analyses/Coral/output/PercentCover/Coral_PC_LME_Stats.txt") %>%
+  mutate(ManagedAreaName = case_when(ManagedAreaName == "Southeast Florida Coral Reef Ecosystem Conservation Area" ~ "Kristin Jacobs Coral Aquatic Preserve",
+                                     ManagedAreaName == "St. Andrews State Park Aquatic Preserve" ~ "St. Andrews Aquatic Preserve",
+                                     .default = ManagedAreaName)) %>%
+  as.data.table()
+oyster_results <- fread("../../SEACAR_Trend_Analyses/Oyster/output/Oyster_All_GLMM_Stats.txt")
+oyster_results[ParameterName!="Shell Height" & SizeClass=="", ]$SizeClass <- NA
+checkTrends <- function(p, LME_Slope, SufficientData){
+  if(SufficientData){
+    if(is.na(LME_Slope)){
+      return("Model did not fit the available data")
+    } else {
+      increasing <- LME_Slope > 0
+      trendPresent <- p <= 0.05
+      trendStatus <- "No significant trend"
+      if(trendPresent){
+        trendStatus <- ifelse(increasing, "Significantly increasing trend", 
+                              "Significantly decreasing trend")
+      }          
+    }
+  } else {
+    trendStatus <- "Insufficient data to calculate trend"
+  }
+  return(trendStatus)
+}
+# Apply trend detection to coral results
+coral_pc_results <- coral_pc_results %>% rowwise() %>% 
+  mutate(Trend = checkTrends(p = LME_p, LME_Slope = LME_Slope, SufficientData = SufficientData)) %>%
+  as.data.table()
+disc_model_results <- fread("output/disc_model_results.csv") %>%
+  mutate(ManagedAreaName = case_when(ManagedAreaName == "Southeast Florida Coral Reef Ecosystem Conservation Area" ~ "Kristin Jacobs Coral Aquatic Preserve",
+                                     ManagedAreaName == "St. Andrews State Park Aquatic Preserve" ~ "St. Andrews Aquatic Preserve",
+                                     .default = ManagedAreaName)) %>%
+  as.data.table()
+MA_All <- fread("data/ManagedArea.csv")
+
+##### Acreage setup
+acreage <- openxlsx::read.xlsx("data/ChangeAnalysis_ChangeResultTable_2025.xlsx") %>%
+  as.data.table()
+
+generate_acreage_statement <- function(ma, habitat, acreage){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  subset <- acreage[ManagedAreaName==ma & LandCoverHabitat==habitat, ]
+    
+  if(habitat=="CW"){
+    if(nrow(subset)==0){
+      finalStatement <- glue("{habitat} mapping data is needed for {ma_short}.")
+      finalTrend <- NA
+    } else {
+      subset <- subset[!is.na(LandCoverGroup), ]
+      subset <- subset %>% 
+        arrange(factor(LandCoverGroup, levels = c("Mangroves","Marsh","Invasives")))
+      n <- length(unique(subset$LandCoverGroup))
+      groups <- data.frame()
+      for(group in unique(subset$LandCoverGroup)){
+        if(group=="Invasives") next
+        g_subset <- subset[LandCoverGroup==group, ]
+        if(nrow(g_subset)>1){
+          g_subset <- g_subset %>% filter(Analysis_Include_YN=="Y")
+        }
+        
+        minYear <- g_subset$MinYear
+        minYearHectares <- g_subset$MinYearHectares
+        maxYear <- g_subset$MaxYear
+        maxYearHectares <- g_subset$MaxYearHectares
+        PercentChange100 <- g_subset$PercentChange100
+        
+        group_name <- ifelse(group=="Mangroves", "mangrove", tolower(group))
+        if(group=="Mangroves"){
+          group_name <- "mangrove"
+        } else if(group=="Invasives"){
+          group_name <- "invasive"
+        } else {
+          group_name <- tolower(group)
+        }
+        
+        df <- data.frame(
+          group = group_name,
+          minYear = minYear,
+          minYearHectares = minYearHectares,
+          maxYear = maxYear,
+          maxYearHectares = maxYearHectares,
+          PercentChange100 = PercentChange100
+        )
+        
+        groups <- bind_rows(groups, df)
+        
+      }
+      
+      # Generate sentences
+      sentences <- c()
+      for(i in seq_len(nrow(groups))){
+        if(groups[i, 'minYear']==groups[i, 'maxYear']) next
+        pc100 <- groups[i, 'PercentChange100']
+        if(pc100==0){
+          sentence <- glue("no change in {groups[i, 'group']} coverage between {groups[i, 'minYear']} ({groups[i, 'minYearHectares']} hectares) and {groups[i, 'maxYear']} ({groups[i, 'maxYearHectares']} hectares)")
+        } else {
+          trend_direction <- ifelse(pc100>0, "increase", "decrease")
+          sentence <- glue("a {abs(pc100)}% {trend_direction} in {groups[i, 'group']} coverage between {groups[i, 'minYear']} ({groups[i, 'minYearHectares']} hectares) and {groups[i, 'maxYear']} ({groups[i, 'maxYearHectares']} hectares)")
+        }
+        sentences <- c(sentences, sentence)
+      }
+      
+      # Determine trend direction
+      startAcre <- sum(groups %>% filter(!group=="invasive") %>% pull(minYearHectares))
+      endAcre <- sum(groups %>% filter(!group=="invasive") %>% pull(maxYearHectares))
+      diff <- endAcre - startAcre
+      finalTrend <- ifelse(diff>0, 1, ifelse(diff<0, -1, 0))
+      
+      intro <- paste0("Mapping efforts in ", ma_short, " show ")
+      if(length(sentences)==1){
+        finalStatement <- paste0(intro, paste(sentences), ".")
+      } else if(length(sentences)==2){
+        finalStatement <- paste0(intro, paste(sentences, collapse = ", and "), ".")
+      } else if(length(sentences)==3){
+        finalStatement <- paste0(intro, sentences[1], ", ", sentences[2], ", and ", sentences[3], ".")
+      }
+    }
+  
+  } else if(habitat %in% c("OY", "SAV")){
+    habitat_name <- ifelse(habitat=="OY", "Oyster", habitat)
+    if(nrow(subset)==0){
+      finalStatement <- glue("{habitat_name} mapping data is needed for {ma_short}.")
+      finalTrend <- NA
+    } else {
+      if(nrow(subset)>1){
+        subset <- subset %>% filter(Analysis_Include_YN=="Y")
+      }
+      minYear <- subset$MinYear
+      minYearHectares <- subset$MinYearHectares
+      maxYear <- subset$MaxYear
+      maxYearHectares <- subset$MaxYearHectares
+      PercentChange100 <- subset$PercentChange100
+      pct_change_display <- abs(PercentChange100)
+      HectaresChange <- maxYearHectares - minYearHectares
+      # Determine trend direction
+      finalTrend <- ifelse(PercentChange100>0, 1, ifelse(PercentChange100<0, -1, 0))
+      
+      hab_display <- ifelse(habitat=="SAV", "Submerged Aquatic Vegetation", "Intertidal Oyster Reefs")
+      trend <- ifelse(HectaresChange>0, glue("a {pct_change_display}% increase"), ifelse(HectaresChange<0, glue("a {pct_change_display}% decrease"), "no change"))
+      if(minYear==maxYear){
+        finalStatement <- glue("{habitat_name} mapping data is needed for {ma_short}.")
+      } else {
+        finalStatement <- glue("There has been {trend} in hectares of mapped {tolower(hab_display)} between {minYear} ({minYearHectares} hectares) and {maxYear} ({maxYearHectares} hectares).")
+      }    
+    }
+  }
+  
+  return(c("text" = finalStatement,
+           "trend" = finalTrend))
+}
+
+```
+
+```{r trendText}
+# Takes a list of parameters, formats for display, oxford comma, etc.
+param_display <- function(parameters){
+  if(length(parameters)==1){
+    paste(parameters)
+  } else if(length(parameters)==2){
+    paste0("both ", paste(parameters, collapse = " and "))
+  } else {
+    paste(paste(parameters[-length(parameters)], collapse = ", "), 
+          parameters[length(parameters)], sep = ", and ")
+  }
+}
+
+# Discrete text generation (agg models)
+generate_disc_text <- function(data, indicator, ma){
+  # Subset for aggregate model results
+  data <- data[IndicatorName==indicator, ]
+  # Subset for individual model results (years needed for time period)
+  subset <- disc_model_results %>% filter(ManagedAreaName == ma, IndicatorName == indicator)
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  
+  if(nrow(data)==0){
+    sentence <- glue("Data for {tolower(indicator)} is needed for {ma_short}.")
+    numericTrend <- NA
+  } else {
+    # Gather needed variables for display in trend text
+    n_years <- max(subset$N_Years)
+    time_period <- paste(min(subset$EarliestYear), "and", max(subset$LatestYear))
+    trend <- ifelse(unique(data$Trend)==1, "an increase", "a decrease")
+    trended <- ifelse(unique(data$Trend)==1, "increased", ifelse(unique(data$Trend)==-1, "decreased", "showed no detectable trend"))
+    parameters <- str_split_1(data$Parameters, "\\|")
+    # Collapse both chlorophyll a params into a single param
+    chla <- c("Chlorophyll a, Corrected for Pheophytin", "Chlorophyll a, Uncorrected for Pheophytin")
+    parameters[parameters %in% chla] <- "Chlorophyll a"
+    p_display <- param_display(tolower(unique(parameters)))
+    n_parameters <- length(unique(subset$ParameterName))  
+    if(indicator=="Nutrients"){
+      sentence <- glue("Nutrient concentrations {trended} based on an aggregate model of total nitrogen and total phosphorus analyses results.")
+      numericTrend <- unique(data$Trend)      
+    } else if(indicator=="Water Clarity"){
+      sentence <- glue(
+        "Water clarity {trended} between {time_period} based on an aggregate model of analyses results from {n_parameters} parameters.")
+      numericTrend <- unique(data$Trend)      
+    }
+  }
+  sentence <- gsub("secchi depth", "Secchi depth", sentence)
+  # return(sentence)
+  return(list("text" = sentence,
+              "trend" = numericTrend))
+}
+
+# Discrete Water Quality text generation
+generate_discWQ_text <- function(data = disc_wq_trends, ma){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  subset <- data %>% filter(ManagedAreaName==ma)
+  if(nrow(subset)==0){
+    sentence <- glue("Data for water quality is needed for {ma_short}.")
+  } else {
+    minYear <- subset$EarliestYear
+    maxYear <- subset$LatestYear
+    numericTrend <- subset$Trend
+    trend <- ifelse(numericTrend==1, "increased", ifelse(numericTrend==-1, "decreased", "showed no detectable trend"))
+    sentence <- glue("Dissolved oxygen, a standard measure for water quality due to its correlation with temperature and salinity, {trend} between {minYear} and {maxYear}.")
+  }
+  return(list("text" = sentence,
+              "trend" = numericTrend))
+}
+
+# SAV text generation
+generate_sav_text <- function(data, ma){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  ma_sav_subset <- sav_results[ManagedAreaName==ma, ]
+  # Order species according to their order on the Atlas / plots
+  species_order <- c("Total SAV","Total seagrass","Halophila spp.","Halophila, unk.",
+                     "Johnson's seagrass","Manatee grass","Paddle grass","Shoal grass",
+                     "Star grass","Turtle grass","Widgeon grass","Attached algae","Drift algae")
+  
+  if(nrow(ma_sav_subset)==0){
+    sentence <- glue("Data for SAV percent cover is needed for {ma_short}.")
+    numericTrend <- NA
+  } else {
+    # Model source
+    if(ma_sav_subset$Source=="aggregate"){
+      # Spp that make up model results (aggregate only)
+      species <- str_split_1(unique(ma_sav_subset$SpIncluded), "\\|")
+      ordered_species <- species[order(match(species, species_order))]
+      n_species <- length(species)
+      sp_display <- glue("an aggregate model of {param_display(tolower(ordered_species))}")
+    } else {
+      sp_display <- glue("{tolower(ma_sav_subset$Source)}")
+    }
+    # Trend
+    trend <- ifelse(ma_sav_subset$Trend==1, "increased", 
+                    ifelse(ma_sav_subset$Trend==-1, "decreased", 
+                           "showed no significant trend"))
+    numericTrend <- ma_sav_subset$Trend
+    minYear <- ma_sav_subset$minYear
+    maxYear <- ma_sav_subset$maxYear
+    sentence <- glue("SAV percent cover {trend} between {minYear} and {maxYear} based on {sp_display} analyses results.")    
+  }
+  sentence <- stri_replace_all_regex(
+    sentence,
+    pattern = c("johnson's seagrass", "halophila spp.", "unidentified halophila"),
+    replacement = c("Johnson's seagrass", "<i>Halophila</i> spp.", "unidentified <i>Halophila</i>"),
+    vectorize = FALSE
+  )
+  # return(sentence)
+  return(list("text" = sentence,
+              "trend" = numericTrend))
+}
+
+# Nekton text generation
+generate_nekton_text <- function(nekton_results, ma){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  data <- nekton_results[ManagedAreaName==ma, ]
+  nekton_byYear <- nekton_results_byYear[ManagedAreaName==ma, ]
+  if(nrow(data)==0){
+    sentences <- glue("Data for nekton richness is needed for {ma_short}.")
+  } else {
+    total_period <- paste0(min(data$EarliestYear), " and ", max(data$LatestYear))
+    avg_richness <- mean(data$Mean)
+    max_richness <- max(data$Max)
+    max_richness_year <- data[Max==max_richness, Year_MaxRichness]
+    min_richness <- min(data$Min)
+    min_richness_year <- data[Min==min_richness, Year_MinRichness]
+    if(length(data$GearType)>1){
+      # If more than one geartype, combine them
+      sentences <- glue("Between {total_period} annual average nekton richness per 100 square meters across all survey gear types was {round(avg_richness,2)} species, with a maximum of {round(max_richness,2)} species per 100 square meters in {max_richness_year} and a minimum of {round(min_richness,2)} species per 100 square meters in {min_richness_year}.")
+    } else {
+      # If not, display the only available geartype
+      d <- data
+      if(d$N_Years<5){
+        most_recent_year <- max(d$LatestYear)
+        year_statement <- ifelse(d$N_Years==1, "1 year", paste0(d$N_Years, " years"))
+        n_species <- round(nekton_byYear[Year==most_recent_year, Max],2)
+        # sentences <- glue("Insufficient data was available to assess long-term trends for nekton in {ma_short}. Five years of data are required to assess long-term trends for nekton. {ma_short} only has {year_statement} of data as of {d$LatestYear}.")
+        sentences <- glue("Monitoring in {most_recent_year} showed {n_species} species across all species groups in {ma_short}.")
+      } else {
+        sentences <- glue("Between {d$EarliestYear} and {d$LatestYear} annual {tolower(d$GearType)} surveys showed average nekton richness per 100 square meters was {round(d$Mean,2)} species, with a maximum of {round(d$Max,2)} species per 100 square meters in {d$Year_MaxRichness} and a minimum of {round(d$Min,2)} species per 100 square meters in {d$Year_MinRichness}.")
+      }
+    }
+  }
+  return(paste(sentences, collapse = " "))
+}
+
+# Coastal Wetlands generation
+generate_cw_text <- function(cw_results, ma){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  data <- cw_results[ManagedAreaName==ma,]
+  cw_byYear <- cw_results_byYear[ManagedAreaName==ma,]
+  sentences <- c()
+  if(nrow(data)==0){
+    sentences <- glue("Data for wetlands species composition is needed for {ma_short}.")
+  } else {
+    if(max(data$N_Years)<5){
+      year_statement <- ifelse(max(data$N_Years)==1, paste0(max(data$N_Years), " year"), paste0(max(data$N_Years), " years"))
+      year_period <- ifelse(max(data$N_Years)==1, "", paste0(" from ",data$EarliestYear, " to ", data$LatestYear))
+      # sentences <- glue("With only {year_statement} of data available{year_period}, there was insufficient data to assess long-term species composition in {ma_short}.")
+      
+      most_recent_year <- max(data$LatestYear)
+      n_species <- round(sum(cw_byYear[Year==most_recent_year, Max]),2)
+      sentences <- glue("Monitoring in {most_recent_year} showed {n_species} species across all species groups in {ma_short}.")
+    } else {
+      if(nrow(data)==1){
+        d <- data
+        sentence <- glue("Between {d$EarliestYear} and {d$LatestYear}, species composition surveys showed an average of {round(d$Mean,2)} {tolower(d$SpeciesGroup1)} species, with a maximum of {round(d$Max,2)} in {d$Year_MaxRichness} and a minimum of {round(d$Min,2)} in {d$Year_MinRichness}.")
+        sentences <- c(sentences, sentence)
+      } else {
+        # When multiple SG need to be aggregated
+        total_period <- paste0(min(data$EarliestYear), " and ", max(data$LatestYear))
+        avg_richness <- mean(data$Mean)
+        max_richness <- max(data$Max)
+        max_richness_year <- data[Max==max_richness, Year_MaxRichness]
+        min_richness <- min(data$Min)
+        min_richness_year <- data[Min==min_richness, unique(Year_MinRichness)]
+        sentences <- glue("Between {total_period}, species composition surveys showed an annual average of {round(avg_richness,2)} species across all species groups, with a maximum of {round(max_richness,2)} in {max_richness_year} and a minimum of {round(min_richness,2)} in {min_richness_year}.")
+      }
+    }
+  }
+  return(paste(sentences, collapse = " "))
+}
+
+# Coral text generation
+generate_coral_text <- function(ma, ind){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  coral_sr <- coral_sr_results[ManagedAreaName==ma, ]
+  coral_pc <- coral_pc_results[ManagedAreaName==ma, ]
+  coral_sr_byYear <- coral_sr_results_byYear[ManagedAreaName==ma, ]
+  
+  # Percent Cover
+  if(nrow(coral_pc)==0){
+    pc_sentence <- glue("Data for coral percent cover is needed for {ma_short}.")
+    numericTrend <- NA
+  } else {
+    if(coral_pc$N_Years<5){
+      if(coral_pc$N_Years==1){
+        time_statement <- "1 year of data available"
+      } else {
+        time_statement <- glue("{coral_pc$N_Years} years of data available from {coral_pc$EarliestYear} to {coral_pc$LatestYear}")
+      }
+      pc_sentence <- glue("With only {time_statement}, there was insufficient data to assess long-term coral species cover in {ma_short}.")
+      numericTrend <- NA
+    } else {
+      trend <- ifelse(str_detect(coral_pc$Trend, "increasing"), "an increase", 
+                      ifelse(str_detect(coral_pc$Trend, "decreasing"), "a decrease", 
+                             ifelse(str_detect(coral_pc$Trend, "No"), "no significant change")))
+      numericTrend <- ifelse(str_detect(coral_pc$Trend, "increasing"), 1, 
+                             ifelse(str_detect(coral_pc$Trend, "decreasing"), -1, 
+                                    ifelse(str_detect(coral_pc$Trend, "No"), 0)))
+      pc_sentence <- glue("Between {coral_pc$EarliestYear} and {coral_pc$LatestYear}, data monitoring efforts in {ma_short} showed {trend} in the percent cover of coral species.")
+    }
+  }
+  
+  # Species Richness
+  if(nrow(coral_sr)==0){
+    sr_sentence <- glue("Data for coral richness is needed for {ma_short}.")
+  } else {
+    if(coral_sr$N_Years<5){
+      
+      most_recent_year <- max(coral_sr$LatestYear)
+      n_species <- coral_sr_byYear[Year==most_recent_year, Max]
+      sr_sentence <- glue("Monitoring in {most_recent_year} showed {n_species} grazers and reef dependent species in {ma_short}.")
+      
+      # if(coral_sr$N_Years==1){
+      #   time_statement <- "1 year of data available"
+      # } else {
+      #   time_statement <- glue("{coral_sr$N_Years} years of data available from {coral_sr$EarliestYear} to {coral_sr$LatestYear}")
+      # }
+      # sr_sentence <- glue("With only {time_statement}, there was insufficient data to assess long-term species richness in {ma_short}.")  
+      
+    } else {
+      sr_sentence <- glue("Between {coral_sr$EarliestYear} and {coral_sr$LatestYear}, species richness surveys in {ma_short} showed an average of {round(coral_sr$Mean,2)} grazers and reef dependent species, with a maximum of {round(coral_sr$Max,2)} in {coral_sr$Year_MaxRichness} and a minimum of {round(coral_sr$Min,2)} in {coral_sr$Year_MinRichness}.")
+    }
+  }
+  
+  cc_sentence <- "<i>To Be Determined</i>"
+  
+  if(ind=="pc"){
+    return(list("text" = pc_sentence,"trend" = numericTrend))
+  } else if(ind=="sr"){
+    return(list("text" = sr_sentence,"trend" = NA))
+  } else if(ind=="cc"){
+    return(list("text" = cc_sentence,"trend" = NA))
+  }
+}
+
+# Oyster text generation
+generate_oyster_text <- function(ma, ind){
+  ma_short <- MA_All[ManagedAreaName==ma, ShortName]
+  ma_abrev <- MA_All[ManagedAreaName==ma, Abbreviation]
+  oy_subset <- oyster_results[ManagedAreaName==ma & 
+                                ParameterName==ind & ShellType=="Live Oysters", ]
+  habtype <- ifelse(ma_abrev %in% c("ABAP","ANERR","YRMAP"), "Restored", "Natural")
+  oy_subset <- oy_subset[HabitatType==habtype]
+  
+  if(nrow(oy_subset)==0){
+    den_sentence <- "Insufficient data was available to assess long-term trends for density."
+    pct_sentence <- "Insufficient data was available to assess long-term trends for percent live."
+    sh_sentence <- "Insufficient data was available to estimate a size trend for live oysters."
+    
+  } else {
+    if(nrow(oy_subset[SufficientData==FALSE]) == nrow(oy_subset)){
+      sentence <- glue("Data for {tolower(ind)} is needed for {ma_short}.")
+      den_sentence <- sentence
+      pct_sentence <- sentence
+      sh_sentence <- sentence  
+    } else {
+      if(ind=="Shell Height"){
+        t_oy_subset <- oy_subset %>% 
+          filter(SufficientData==TRUE, SizeClass!="") %>% 
+          group_by(HabitatType, ShellType, SizeClass, EarliestLiveDate, LatestLiveDate) %>% 
+          reframe(trend = ifelse(ModelEstimate>0, "an increase", "a decrease")) %>%
+          as.data.table()
+        large_model <- nrow(t_oy_subset[!is.na(trend) & SizeClass==">75mm"])>0
+        small_model <- nrow(t_oy_subset[!is.na(trend) & SizeClass=="25-75mm"])>0
+        
+        if(!large_model & !small_model){
+          sh_sentence <- "Insufficient data was available to estimate a size trend for live oysters."
+        } else if(large_model){
+          # Large oyster trend
+          trend <- t_oy_subset[HabitatType==habtype & SizeClass==">75mm", "trend"]
+          minDate <- t_oy_subset[HabitatType==habtype & SizeClass==">75mm", "EarliestLiveDate"]
+          maxDate <- t_oy_subset[HabitatType==habtype & SizeClass==">75mm", "LatestLiveDate"]
+          sh_sentence <- glue("Between {minDate} and {maxDate}, data showed {trend} in the shell height of ≥75mm live oysters within {ma_short} for {tolower(habtype)} reefs.")
+        } else if(small_model){
+          # Smaller oyster trend
+          trend <- t_oy_subset[HabitatType==habtype & !SizeClass==">75mm", "trend"]
+          trend <- ifelse(is.na(trend), "no model", trend)
+          minDate <- t_oy_subset[HabitatType==habtype & !SizeClass==">75mm", "EarliestLiveDate"]
+          maxDate <- t_oy_subset[HabitatType==habtype & !SizeClass==">75mm", "LatestLiveDate"]
+          sh_sentence <- glue("Between {minDate} and {maxDate}, data showed {trend} in the shell height of 25-75mm live oysters within {ma_short} for {tolower(habtype)} reefs.")
+        }
+      } else {
+        t_oy_subset <- oy_subset %>% 
+          filter(SufficientData==TRUE) %>% 
+          group_by(HabitatType, ShellType, EarliestLiveDate, LatestLiveDate) %>% 
+          reframe(trend = ifelse(ModelEstimate>0, "an increase", "a decrease")) %>%
+          as.data.table()
+        
+        trend <- t_oy_subset[HabitatType==habtype, "trend"]
+        minDate <- t_oy_subset[HabitatType==habtype, "EarliestLiveDate"]
+        maxDate <- t_oy_subset[HabitatType==habtype, "LatestLiveDate"]
+        den_sentence <- glue("Live oyster density within {ma_short} has shown {trend} between {minDate} and {maxDate} for {tolower(habtype)} reefs.")
+        pct_sentence <- glue("Between {minDate} and {maxDate}, data showed {trend} in the proportion of live oysters within {ma_short} for {tolower(habtype)} reefs.")
+        
+      }
+    }
+  }
+
+  if(ind=="Density"){return(den_sentence)}
+  if(ind=="Percent Live"){return(pct_sentence)}
+  if(ind=="Shell Height"){return(sh_sentence)}
+}
+```
+
+```{r GenerateText, results='asis'}
+# Function to capture text results and store in dataframe
+# Applies <p> tags for HTML format
+store_result <- function(df, habitat, indicator, ma, text, trend = NA){
+  list <- list("ManagedAreaName" = ma, 
+               "Habitat" = habitat,
+               "IndicatorName" = indicator,
+               "Text" = paste0("<p>", text, "</p>"),
+               "Trend" = as.double(trend))
+  return(bind_rows(df, list))
+}
+
+textResults <- data.frame()
+for(ma in unique(MA_All$ManagedAreaName)){
+  cat("  \n")
+  cat(glue("# {ma}"))
+  cat("  \n")
+  
+  ## SAV Results
+  cat("## Submerged Aquatic Vegetation")
+  cat("  \n")
+  ma_sav_subset <- sav_results[ManagedAreaName==ma, ]
+  sav_return <- generate_sav_text(data = sav_results, ma = ma)
+  sav_text <- sav_return[["text"]]
+  sav_trend <- sav_return[["trend"]]
+  cat(sav_text)
+  cat("  \n")
+  textResults <- store_result(textResults, "Submerged Aquatic Vegetation", "Percent Cover (by species)", ma, sav_text, sav_trend)
+  
+  ## SAV Acreage
+  sav_acre_return <- generate_acreage_statement(ma, habitat = "SAV", acreage)
+  sav_acre_text <- sav_acre_return[["text"]]
+  sav_acre_trend <- sav_acre_return[["trend"]]
+  cat("  \n")
+  cat("### SAV Acreage")
+  cat("  \n")
+  cat(sav_acre_text)
+  cat("  \n")
+  textResults <- store_result(textResults, "Submerged Aquatic Vegetation", "Acreage", ma, sav_acre_text, sav_acre_trend)
+  
+  ## Discrete Results
+  ma_disc_subset <- disc_results[ManagedAreaName==ma, ]
+  for(indicator in c("Water Clarity", "Nutrients")){
+    cat("  \n")
+    cat(glue("## {indicator}"))
+    cat("  \n")
+    disc_return <- generate_disc_text(data = ma_disc_subset, indicator = indicator, ma = ma)
+    disc_text <- disc_return[["text"]]
+    disc_trend <- disc_return[["trend"]]
+    cat(disc_text)
+    cat("  \n")
+    textResults <- store_result(textResults, "Water Column", indicator, ma, disc_text, disc_trend)
+  }
+  
+  cat("  \n")
+  cat("## Water Quality")
+  cat("  \n")
+  discWQ_return <- generate_discWQ_text(data = disc_wq_trends, ma = ma)
+  discWQ_text <- discWQ_return[["text"]]
+  discWQ_trend <- discWQ_return[["trend"]]
+  cat(discWQ_text)
+  cat("  \n")
+  textResults <- store_result(textResults, "Water Column", "Water Quality", ma = ma, text = discWQ_text, trend = discWQ_trend)
+  
+  # Nekton Results
+  cat("  \n")
+  cat("## Nekton")
+  cat("  \n")
+  nekton_text <- generate_nekton_text(nekton_results, ma)
+  cat(nekton_text)
+  cat("  \n")
+  textResults <- store_result(textResults, "Water Column", "Nekton", ma, nekton_text)
+  
+  # CW Results
+  cat("  \n")
+  cat("## Coastal Wetlands")
+  cat("  \n")
+  cw_text <- generate_cw_text(cw_results, ma)
+  cat(cw_text)
+  cat("  \n")
+  textResults <- store_result(textResults, "Coastal Wetlands", "Species Composition", ma, cw_text)
+  
+  # CW Acreage
+  cw_acre_return <- generate_acreage_statement(ma, habitat = "CW", acreage)
+  cw_acre_text <- cw_acre_return[["text"]]
+  cw_acre_trend <- cw_acre_return[["trend"]]
+  cat("  \n")
+  cat("### Coastal Wetlands Acreage")
+  cat("  \n")
+  cat(cw_acre_statement)
+  cat("  \n")
+  textResults <- store_result(textResults, "Coastal Wetlands", "Acreage (by habitat)", ma, cw_acre_text, cw_acre_trend)
+  
+  # Coral Results
+  cat("  \n")
+  cat("## Coral/Coral Reef")
+  cat("  \n")
+  # Species Richness
+  ind <- "Grazers and Reef Dependent Species"
+  cat("  \n")
+  cat(glue("### {ind}"))
+  cat("  \n")
+  coral_sr_return <- generate_coral_text(ma, "sr")
+  coral_sr_text <- coral_sr_return[["text"]]
+  coral_sr_trend <- coral_sr_return[["trend"]]
+  textResults <- store_result(textResults, "Coral/Coral Reef", ind, ma, coral_sr_text, coral_sr_trend)
+  cat(coral_sr_text)
+  cat("  \n")
+  # Percent Cover
+  ind <- "Percent Cover"
+  cat("  \n")
+  cat(glue("### {ind}"))
+  cat("  \n")
+  coral_pc_return <- generate_coral_text(ma, "pc")
+  coral_pc_text <- coral_pc_return[["text"]]
+  coral_pc_trend <- coral_pc_return[["trend"]]
+  textResults <- store_result(textResults, "Coral/Coral Reef", ind, ma, coral_pc_text, coral_pc_trend)
+  cat(coral_pc_text)
+  cat("  \n")
+  # Community Composition
+  ind <- "Community Composition"
+  cat("  \n")
+  cat(glue("### {ind}"))
+  cat("  \n")
+  coral_cc_return <- generate_coral_text(ma, "cc")
+  coral_cc_text <- coral_cc_return[["text"]]
+  coral_cc_trend <- coral_cc_return[["trend"]]
+  textResults <- store_result(textResults, "Coral/Coral Reef", ind, ma, coral_cc_text)
+  cat(coral_cc_text)
+  cat("  \n")
+  
+  ## Oyster
+  # Density
+  cat("  \n")
+  cat("## Oyster/Oyster Reef")
+  cat("  \n")
+  ind <- "Density"
+  cat("  \n")
+  cat(glue("### {ind}"))
+  cat("  \n")
+  oy_den_text <- generate_oyster_text(ma, ind)
+  textResults <- store_result(textResults, "Oyster/Oyster Reef", ind, ma, oy_den_text)
+  cat(oy_den_text)
+  cat("  \n")
+  # Percent Live
+  ind <- "Percent Live"
+  cat("  \n")
+  cat(glue("### {ind}"))
+  cat("  \n")
+  oy_pct_text <- generate_oyster_text(ma, ind)
+  textResults <- store_result(textResults, "Oyster/Oyster Reef", ind, ma, oy_pct_text)
+  cat(oy_pct_text)
+  cat("  \n")
+  # Shell Height
+  ind <- "Shell Height"
+  cat("  \n")
+  cat(glue("### {ind}"))
+  cat("  \n")
+  oy_sh_text <- generate_oyster_text(ma, ind)
+  textResults <- store_result(textResults, "Oyster/Oyster Reef", ind, ma, oy_sh_text)
+  cat(oy_sh_text)
+  cat("  \n")
+  
+  # Oyster Acreage
+  oy_acre_return <- generate_acreage_statement(ma, habitat = "OY", acreage)
+  oy_acre_text <- oy_acre_return[["text"]]
+  oy_acre_trend <- oy_acre_return[["trend"]]
+  cat("  \n")
+  cat("### Oyster Acreage")
+  cat("  \n")
+  cat(oy_acre_statement)
+  cat("  \n")
+  textResults <- store_result(textResults, "Oyster/Oyster Reef", "Acreage", ma, oy_acre_text, oy_acre_trend)
+}
+```
+
+```{r exportFormatting}
+# Add AreaID column
+textResultsFinal <- merge(textResults, 
+                          MA_All[, c("ManagedAreaName", "AreaID", "Region")], 
+                          by = "ManagedAreaName") %>%
+  select(AreaID, Region, ManagedAreaName, Habitat, IndicatorName, Text, Trend)
+
+
+
+# Add adjustments to ensure proper MA name display in final output file
+textResultsFinal$ManagedAreaName[textResultsFinal$AreaID==12] <- "Kristin Jacobs Coral Aquatic Preserve"
+textResultsFinal$ManagedAreaName[textResultsFinal$AreaID==40] <- "St. Andrews Aquatic Preserve"
+
+textResultsFinal$SufficientData <- ifelse(str_detect(textResultsFinal$Text, "is needed|insufficient|Insufficient|not available|To Be Determined"), FALSE, TRUE)
+
+# Determine when to include which habitat
+# No Oyster in SE region, Coral only in SE region
+textResultsFinal <- textResultsFinal %>% rowwise() %>% mutate(
+  Website = ifelse(Habitat=="Oyster/Oyster Reef" & Region=="SE", 0, ifelse(Habitat=="Coral/Coral Reef" & !Region=="SE", 0, 1))
+)
+textResultsFinal$Website[textResultsFinal$ManagedAreaName=="St. Joseph Bay State Buffer Preserve"] <- 0
+
+textResultsFinal$Trend[(textResultsFinal$SufficientData==TRUE & is.na(textResultsFinal$Trend) & str_detect(textResultsFinal$Text, "increase"))] <- 1
+textResultsFinal$Trend[(textResultsFinal$SufficientData==TRUE & is.na(textResultsFinal$Trend) & str_detect(textResultsFinal$Text, "decrease"))] <- -1
+# View(textResultsFinal %>% filter(SufficientData==TRUE & is.na(Trend)))
+
+# Write results to excel file
+openxlsx::write.xlsx(textResultsFinal, file = paste0("output/TrendStatusText_Final", Sys.Date(), ".xlsx"), asTable = TRUE)
+```
