@@ -717,7 +717,11 @@ textResultsFinal$Website[textResultsFinal$ManagedAreaName=="St. Joseph Bay State
 
 textResultsFinal$Trend[(textResultsFinal$SufficientData==TRUE & is.na(textResultsFinal$Trend) & str_detect(textResultsFinal$Text, "increase"))] <- 1
 textResultsFinal$Trend[(textResultsFinal$SufficientData==TRUE & is.na(textResultsFinal$Trend) & str_detect(textResultsFinal$Text, "decrease"))] <- -1
-# View(textResultsFinal %>% filter(SufficientData==TRUE & is.na(Trend)))
+# Statements with Insufficient Data receive a Trend value of 2
+textResultsFinal$Trend[textResultsFinal$SufficientData==FALSE] <- 2
+# Statements with Sufficient Data but un-tested trends (Species Richness plots [Nekton, Coral, CW]) receive a Trend value of 3
+# This value of 3 will correspond to a unique trend icon for these instances.
+textResultsFinal$Trend[(textResultsFinal$SufficientData==TRUE & is.na(textResultsFinal$Trend))] <- 3
 
 # Write results to excel file
 openxlsx::write.xlsx(textResultsFinal, file = paste0("output/TrendStatusText_Final", Sys.Date(), ".xlsx"), asTable = TRUE)
