@@ -29,6 +29,7 @@ managedareas <- unique(sav$ManagedAreaName)
 ma_subset <- MA_All[ManagedAreaName %in% managedareas]
 sav_mod_locs <- list.files("../../SEACAR_Trend_Analyses/SAV/output/models/", pattern = "SAV_BBpct_", full.names=T)
 failedmodslist <- readRDS("../../SEACAR_Trend_Analyses/SAV/output/models/failedmodslist.rds")
+# Exclude Drift Algae, Total Seagrass, and Total SAV from aggregate model
 short_sp_to_exlcude <- c("DrAl", "ToSe", "ToSa")
 
 #Managed areas that should have Halophila species combined:
@@ -87,8 +88,8 @@ for(ma in managedareas){
     # Store model result overviews
     sav_results <- bind_rows(sav_results, ma_model_results)
   }
-  # Run a fixed effects model for each MA, using species (analysisunit) as factor
-  model_fixed <- try(nlme::lme(BB_pct ~ relyear + analysisunit, 
+  # Run a fixed effects model for each MA, using species (common_name) as factor
+  model_fixed <- try(nlme::lme(BB_pct ~ relyear + common_name, 
                                random = list(SiteIdentifier = ~relyear),
                                control = list(msMaxIter = 1000, msMaxEval = 1000, 
                                               sing.tol=1e-20),
@@ -109,6 +110,35 @@ for(ma in managedareas){
     )
     
     # Store model result overviews
+    sav_results <- bind_rows(sav_results, ma_model_results)
+  } else if(!ma %in% unique(sav_results$ManagedAreaName)){
+    avail_sp <- sav %>% filter(ManagedAreaName==ma) %>% pull(Species)
+    if(any(c("Total SAV", "Total Seagrass") %in% avail_sp)){
+      if("Total SAV" %in% avail_sp){
+        temp_ma <- sav %>% filter(ManagedAreaName==ma, Species=="Total SAV")
+      } else if("Total Seagrass" %in% avail_sp){
+        temp_ma <- sav %>% filter(ManagedAreaName==ma, Species=="Total Seagrass")
+      }
+      ma_model_results <- data.frame(
+        "ManagedAreaName" = ma,
+        "Intercept" = temp_ma$LME_Intercept,
+        "Slope" = temp_ma$LME_Slope,
+        "p" = round(temp_ma$p,6),
+        "Source" = unique(temp_ma$Species),
+        "SpIncluded" = unique(temp_ma$Species)
+      ) 
+    } else {
+      ma_model_results <- data.frame(
+        "ManagedAreaName" = ma,
+        "Intercept" = NA,
+        "Slope" = NA,
+        "p" = NA,
+        "Source" = NA,
+        "SpIncluded" = NA
+      )
+    }
+    
+    # Store model result overviews for Total SAV, Total Seagrass, or NA results
     sav_results <- bind_rows(sav_results, ma_model_results)
   }
   

@@ -32,8 +32,10 @@ trends <- openxlsx::read.xlsx(paste0("output/TrendStatusText_Final", Sys.Date(),
   filter(Website==1)
 # Function to assign icons for each trend type (1, 0, -1, NA)
 apply_icons <- function(trend){
-  if(is.na(trend)){
+  if(trend==2){
     "data/icons/insuff-data.png"
+  } else if(trend==3){
+    "data/icons/notrend verylow icon.png"
   } else if(trend==1){
     "data/icons/increase-medium-icon.png"
   } else if(trend==-1){
