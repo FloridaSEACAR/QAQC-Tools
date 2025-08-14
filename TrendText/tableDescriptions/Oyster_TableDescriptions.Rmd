@@ -91,14 +91,14 @@ generate_oyster_description <- function(filtered_oy, parameter){
         inc_slope <- round(abs(filtered_oy_ht[SizeClass==inc_class, ModelEstimate]),2)
         dec_class <- filtered_oy_ht[ModelEstimate < 0, SizeClass]
         dec_slope <- round(abs(filtered_oy_ht[SizeClass==dec_class, ModelEstimate]),2)
-        sentence <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {inc_class} size class increased by {inc_slope}mm per year, and it decreased by {dec_slope}mm per year in the {dec_class} size class.")
+        sentence <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {inc_class} size class increased by {inc_slope} mm per year, and it decreased by {dec_slope}mm per year in the {dec_class} size class.")
         sentences[[hab_type]][["trends"]] <- sentence
       } else if(num_inc==1 | num_dec==1){
         # Single direction
         direction <- ifelse(num_inc==1, "increased", "decreased")
         size_class <- ifelse(num_inc==1, filtered_oy_ht[ModelEstimate > 0, SizeClass], filtered_oy_ht[ModelEstimate < 0, SizeClass])
         slope <- round(abs(filtered_oy_ht[SizeClass==size_class, ModelEstimate]),2)
-        first_part <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {size_class} size class {direction} by {slope}mm per year,")
+        first_part <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {size_class} size class {direction} by {slope} mm per year,")
         # Second part
         if(num_no_model>0){
           size_class2 <- filtered_oy_ht[SufficientData==TRUE & is.na(ModelEstimate), unique(SizeClass)]
@@ -117,7 +117,7 @@ generate_oyster_description <- function(filtered_oy, parameter){
         slope1 <- round(abs(filtered_oy_ht[SizeClass==class1, ModelEstimate]),2)
         class2 <- sort(unique(filtered_oy_ht$SizeClass))[1]
         slope2 <- round(abs(filtered_oy_ht[SizeClass==class2, ModelEstimate]),2)
-        sentence <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {class1} and {class2} size classes {direction} by {slope1}mm per year and {slope2}mm per year, respectively.")
+        sentence <- glue("For {tolower(hab_type)} reefs, annual average live oyster shell height in the {class1} and {class2} size classes {direction} by {slope1} mm per year and {slope2} mm per year, respectively.")
         sentences[[hab_type]][["trends"]] <- sentence      
       } else if(num_no_model==2){
         class1 = sort(unique(filtered_oy_ht[SufficientData==TRUE & is.na(ModelEstimate), SizeClass]))[2]
