@@ -24,12 +24,12 @@ source("../seacar_data_location.R")
 
 # archive subfolder must contain a folder with the date of combined tables
 # Ideal workflow upon new combined table export is to place old export files 
-# from SEACARdata into new archive subfolder (with name of export as folder name)
+# from SEACARdata into new archive subfolder (with latest date of export as folder name)
 # before running unzip.R to place new combined exports into SEACARdata
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2024-Jul-11"
+old_file_date <- "2025-Oct-20"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
 old_files <- list.files((paste0(seacar_data_location,"/archive/",old_file_date)), full.names = TRUE)
@@ -58,6 +58,10 @@ file_name_display <- FALSE
 
 # Variable to show Column Differences in Export or not
 show_columns <- FALSE
+
+# Date of thresholds file to use (this should reflect the same file USF used)
+# i.e. the previous iteration of Database_Thresholds
+thresh_date <- "20251119"
 
 ## Variables set to FALSE, script will change to TRUE if conditions met
 columns_differ <- FALSE
@@ -209,7 +213,7 @@ grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile")
   
   if(quadsize=="None"){
     data <- df[ParameterName==param, ]
-    # Use ThresholdID for Total Nitrogen (use All, not Calculated)
+    # Use ThresholdID for Total Nitrogen (use Calculated, not All)
     if(param=="Total Nitrogen"){
       quant_low_value <- db_thresholds[ThresholdID==31, get(grab_val_low)]
       quant_high_value <- db_thresholds[ThresholdID==31, get(grab_val_high)]
@@ -234,10 +238,15 @@ grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile")
     }
   }
   
-  subset_low <- data[ResultValue < quant_low_value, ]
-  subset_low$q_subset <- "low"
+  if(param=="Total Nitrogen"){
+    subset_low <- data[ResultValue < quant_low_value & str_detect(SEACAR_QAQC_Description, "1Q - Calculated by SEACAR"), ]
+    subset_high <- data[ResultValue > quant_high_value & str_detect(SEACAR_QAQC_Description, "1Q - Calculated by SEACAR"), ]
+  } else {
+    subset_low <- data[ResultValue < quant_low_value, ]
+    subset_high <- data[ResultValue > quant_high_value, ]
+  }
   
-  subset_high <- data[ResultValue > quant_high_value, ]
+  subset_low$q_subset <- "low"
   subset_high$q_subset <- "high"
   
   combined_subset <- bind_rows(subset_low, subset_high)
@@ -295,7 +304,8 @@ sp_match <- function(commonID, group1, group2, habitat){
   match <- sp_crosswalk[CommonIdentifier==commonID & Group1==group1 & Group2==group2 & Habitat==habitat, ]
   return(nrow(match)!=0)
 }
-
+# Check species function, helpful for identifying any discrepancies betweene exports and metadata file
+# Currently unused
 check_species <- function(data_new, habitat){
   species <- setDT(data_new %>% group_by(CommonIdentifier, SpeciesGroup1, SpeciesGroup2) %>% reframe())
   species[is.na(species)] <- "NULL"
@@ -319,9 +329,6 @@ jan_dates <- function(data_new){data_new[month(SampleDate) == 1 & day(SampleDate
 ## Import database thresholds
 ## Latest file available at:
 ## https://github.com/FloridaSEACAR/IndicatorQuantiles/blob/main/output/ScriptResults/Database_Thresholds.xlsx
-# Date of thresholds file to use (this should reflect the same file USF used)
-# i.e. the previous iteration of Database_Thresholds
-thresh_date <- "20240813"
 db_threshold_file <- paste0("Database_Thresholds_", thresh_date, ".xlsx")
 db_thresholds <- read_xlsx(paste0("../../IndicatorQuantiles/output/ScriptResults/", db_threshold_file), skip=6)
 db_thresholds <- db_thresholds %>% 
@@ -333,7 +340,7 @@ setDT(db_thresholds)
 
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
-# habitats <- c("Continuous")
+# habitats <- c("Species")
 
 # Begin Discrete processing
 tic()
@@ -361,14 +368,14 @@ if("Discrete" %in% habitats){
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(file, sep='|', na.strings = "NULL")
-    data_new <- data_new[MADup==1, ]
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
-    data_old <- data_old[MADup==1, ]
+    data_old <- data_old[MADup==1, ] #### TEMPORARY, REMOVE NEXT EXPORT
     
     # Full ParameterName for a given file
     param <- data_new[, unique(ParameterName)]
+    if(nrow(data_new)==0) next
     
     # Record filenames for display in report
     data_directory[[habitat]][["new_file_name"]][[param]] <- new_file_shorter
@@ -488,11 +495,9 @@ if("Continuous" %in% habitats){
         # Read in data frame for each combined data export
         print(paste0("Reading in: ", new_file_short))
         data_new <- fread(new_file, sep='|', na.strings = "NULL")
-        data_new <- data_new[MADup==1, ]
         # Read in old data
         print(paste0("Reading in: ", old_file_short))
         data_old <- fread(old_file, sep='|', na.strings = "NULL")
-        data_old <- data_old[MADup==1, ]
         
         # Combine data by parameter for all regions
         data_old_combined <- bind_rows(data_old_combined, data_old)
@@ -587,11 +592,9 @@ if("Species" %in% habitats){
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(file, sep='|', na.strings = "NULL")
-    data_new <- data_new[MADup==1, ]
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
-    data_old <- data_old[MADup==1, ]
     
     data_table <- data.table(
       "habitat" = habitat,

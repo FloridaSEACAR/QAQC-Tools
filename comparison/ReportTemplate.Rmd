@@ -1,6 +1,6 @@
 ---
 title: "Export Comparison QAQC Report"
-author: "(SIDBGD) SEACAR Internal Divison for the Betterment and Goodification of Data"
+author: "(SIDBGD) SEACAR Internal Division for the Betterment and Goodification of Data"
 date: "`r Sys.Date()`"
 output: 
   pdf_document:
@@ -366,6 +366,24 @@ for(i in 1:length(habitats)){
         reframe(n = n(),years = paste(sort(unique(Year)), collapse = ", "))
     }
     
+    ### Observe changes in Jan dates between exports
+    # Load in previous Jan dates data to compare with current
+    available_data <- list.files("output/rds/", full.names = T, pattern = paste0("jan_dates_", h))
+    file_info <- file.info(available_data) # grab file info to determine most recent
+    most_recent <- rownames(file_info)[which.max(file_info$mtime)]
+    old_jan_dates <- readRDS(most_recent) %>% rename("n_old" = "n", "years_old" = "years")
+    # Combine new and old jan dates files to perform comparison
+    combined_jan_dates <- jan_dates_display %>% merge(old_jan_dates) %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(cell_color_n = ifelse(n==n_old, "black", "orange"),
+                    cell_color_years = ifelse(years==years_old, "black", "orange")) %>%
+      dplyr::mutate(n = cell_spec(n, color = cell_color_n),
+                    years = cell_spec(years, color = cell_color_years)) %>%
+      select(-c(n_old, years_old, cell_color_n, cell_color_years))
+    # Save a copy of January dates to observe changes between exports 
+    # (must be saved after loading "most_recent" or else it will be loaded as the most recent)
+    saveRDS(jan_dates_display, paste0("output/rds/jan_dates_", h, "_", Sys.Date(), ".rds"))
+    
     cat("  \n")
     cat("\\newpage")
     cat("## January 1st Dates")
@@ -374,9 +392,13 @@ for(i in 1:length(habitats)){
         A SampleDate of January 1st is not necessarily an error, but a large number of January 1st dates should be examined further. 
         Continuous WQ is excluded from this analysis.")
     cat("  \n")
+    cat("  \n")
+    cat("A comparison is performed between the current export and the previous export. If the number (n) of values has changed or a 
+        difference in years is detected, the values in the *n* column or the *years* column will be highlighted in orange.")
+    cat("  \n")
     print(
       make_kable(
-        jan_dates_display, 
+        combined_jan_dates, 
         table_caption = "Summary of January 1st Dates", 
         format = "latex"
       )
