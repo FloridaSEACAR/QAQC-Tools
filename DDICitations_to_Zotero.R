@@ -87,13 +87,15 @@ citations3 <- citations2[!is.na(Citation) & Citation != "", ]
 #Function to extract author info
 author <- function(c){
   auth_c <- str_sub(c, 1, str_locate(c, "\\. \\(\\d\\d\\d\\d\\)\\.")[1])
-  auth_c <- str_replace_all(auth_c, "\\;", "\\{\\;\\}")
-  auth_c <- str_replace_all(auth_c, "\\,", "\\{\\,\\}")
-  auth_c <- str_replace_all(auth_c, "\\-", "\\{\\-\\}")
-  auth_c <- str_replace_all(auth_c, "(?<!\\)) and ", " \\{and\\} ")
-  auth_c <- str_replace_all(auth_c, "\\) and ", "\\)\\} and \\{")
+  # auth_c <- str_replace_all(auth_c, "\\;", "\\{\\;\\}")
+  # auth_c <- str_replace_all(auth_c, "\\,", "\\{\\,\\}")
+  # auth_c <- str_replace_all(auth_c, "\\-", "\\{\\-\\}")
+  # auth_c <- str_replace_all(auth_c, "(?<!\\)) and ", " \\{and\\} ")
+  # auth_c <- str_replace_all(auth_c, "\\) and ", "\\)\\} and \\{")
+  auth_c <- str_replace_all(auth_c, "\\; ", "\\} and \\{") #"\\}\\}\\} and \\{\\{\\{"
   auth_c <- str_replace_all(auth_c, "\\\r|\\\n", "")
-  auth_c <- paste0("{", auth_c, "}")
+  auth_c <- str_replace(auth_c, "\\.$", "")
+  auth_c <- paste0("{{", auth_c, "}}")
   
   return(auth_c)
 }
@@ -163,7 +165,7 @@ version <- function(c){
 #Build a "Better BibLaTeX"-formatted version of each citation
 citations3[, bib := {
   paste0("@dataset{SEACARID", number(Citation), ",\n  ",
-         "author = {{", author(Citation), "}},\n  ",
+         "author = ", author(Citation), ",\n  ",
          "date = {", date(Citation), "},\n  ",
          "title = {", title(Citation), "},\n  ",
          "number = {Program ID ", number(Citation), "},\n  ",
@@ -177,5 +179,5 @@ citations3[, bib := {
 
 # Write to a .bib file that can be imported into Zotero
 bibs <- paste(citations3$bib, collapse = "\n")
-writeLines(bibs, here::here(paste0("seacar_bibs_", Sys.Date(), ".bib")))
+writeLines(bibs, here::here(paste0("ddi_citations/seacar_bibs_", Sys.Date(), ".bib")))
 
