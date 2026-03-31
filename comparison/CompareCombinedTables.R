@@ -25,11 +25,11 @@ source("../seacar_data_location.R")
 # archive subfolder must contain a folder with the date of combined tables
 # Ideal workflow upon new combined table export is to place old export files 
 # from SEACARdata into new archive subfolder (with latest date of export as folder name)
-# before running unzip.R to place new combined exports into SEACARdata
+# before running unzip.R (QAQC-Tools) to place new combined exports into SEACARdata
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2025-Oct-20"
+old_file_date <- "2025-Dec-10"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
 old_files <- list.files((paste0(seacar_data_location,"/archive/",old_file_date)), full.names = TRUE)
@@ -61,7 +61,7 @@ show_columns <- FALSE
 
 # Date of thresholds file to use (this should reflect the same file USF used)
 # i.e. the previous iteration of Database_Thresholds
-thresh_date <- "20251119"
+thresh_date <- "20260305"
 
 ## Variables set to FALSE, script will change to TRUE if conditions met
 columns_differ <- FALSE
@@ -147,14 +147,19 @@ program_counts <- function(data_old, data_new, habitat, param, quadsize="None"){
   if(!habitat=="Species"){
     program_count_table <- merge(
       data_old %>% 
-        group_by(ProgramID, ProgramName) %>% 
+        group_by(ProgramID, ProgramName, Include) %>% 
         summarise(nOld = n(),
                   LatestDateOld = substr(max(SampleDate), 1, 10)),
       data_new %>% 
-        group_by(ProgramID, ProgramName) %>% 
+        group_by(ProgramID, ProgramName, Include) %>% 
         summarise(nNew = n(),
-                  LatestDateNew = substr(max(SampleDate), 1, 10))) %>%
-      mutate(difference = nNew - nOld)
+                  LatestDateNew = substr(max(SampleDate), 1, 10)),
+      all = T) %>%
+      mutate(
+        nOld = ifelse(is.na(nOld), 0, nOld),
+        nNew = ifelse(is.na(nNew), 0, nNew),
+        difference = nNew - nOld
+      )
     program_count_table$parameter <- param
   } else if(quadsize=="Yes"){
     program_count_table <- merge(
@@ -304,7 +309,7 @@ sp_match <- function(commonID, group1, group2, habitat){
   match <- sp_crosswalk[CommonIdentifier==commonID & Group1==group1 & Group2==group2 & Habitat==habitat, ]
   return(nrow(match)!=0)
 }
-# Check species function, helpful for identifying any discrepancies betweene exports and metadata file
+# Check species function, helpful for identifying any discrepancies between exports and metadata file
 # Currently unused
 check_species <- function(data_new, habitat){
   species <- setDT(data_new %>% group_by(CommonIdentifier, SpeciesGroup1, SpeciesGroup2) %>% reframe())
@@ -340,7 +345,7 @@ setDT(db_thresholds)
 
 # Select which habitats to include in report
 habitats <- c("Discrete", "Continuous", "Species")
-# habitats <- c("Species")
+# habitats <- c("Discrete")
 
 # Begin Discrete processing
 tic()
@@ -371,7 +376,6 @@ if("Discrete" %in% habitats){
     # Read in old data
     print(paste0("Reading in: ", old_file_short))
     data_old <- fread(old_file, sep='|', na.strings = "NULL")
-    data_old <- data_old[MADup==1, ] #### TEMPORARY, REMOVE NEXT EXPORT
     
     # Full ParameterName for a given file
     param <- data_new[, unique(ParameterName)]
@@ -399,16 +403,25 @@ if("Discrete" %in% habitats){
     ### Compare columns and class types
     ## If they have different number of columns, list them in table below
     data_directory[[habitat]][["column_compare"]][[param]] <- compare_columns(
-      data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
+      data_old, data_new, old_file_short, new_file_short, habitat, param)
+    
+    # data_directory[[habitat]][["column_compare"]][[param]] <- compare_columns(
+    #   data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
     
     ### Compare programs between exports
     ## If they have different lengths, record which programs are included/not included
     data_directory[[habitat]][["program_compare"]][[param]] <- compare_programs(
-      data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
+      data_old, data_new, old_file_short, new_file_short, habitat, param)
+    
+    # data_directory[[habitat]][["program_compare"]][[param]] <- compare_programs(
+    #   data_old[Include==1, ], data_new[Include==1, ], old_file_short, new_file_short, habitat, param)
     
     ### Provide counts of data by program by parameter
     program_count_table <- bind_rows(program_count_table, program_counts(
-      data_old[Include==1, ], data_new[Include==1, ], habitat, param))
+      data_old, data_new, habitat, param))
+    
+    # program_count_table <- bind_rows(program_count_table, program_counts(
+    #   data_old[Include==1, ], data_new[Include==1, ], habitat, param))
     
     ### Grab quantile data
     data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new[Include==1, ], habitat, param, type="quantile")
@@ -474,57 +487,58 @@ if("Continuous" %in% habitats){
   cont_params <- c("Dissolved_Oxygen","Dissolved_Oxygen_Saturation","pH",
                    "Salinity", "Turbidity", "Water_Temperature")
   
-  for (p in cont_params){
-    data_old_combined <- data.table()
-    data_new_combined <- data.table()
-    for (region in c("_NW","_NE","_SW","_SE")){
-      par_reg_pattern <- paste0(p, region)
-      region_files <- str_subset(wq_cont_files, par_reg_pattern)
-      for (new_file in region_files){
-        # Grab "new" export file, file_short
-        new_file_short <- tail(str_split(new_file, "/")[[1]],1)
-        new_file_short_split <- str_split(new_file_short, "Combined_WQ_WC_NUT_cont_")[[1]][2]
-        new_file_shorter <- str_split(paste(tail(str_split(str_split(new_file_short, "Combined_WQ_WC_NUT_cont_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
-        
-        # Grab "old" export file, file_short
-        old_file <- str_subset(wq_cont_files_old, par_reg_pattern)
-        old_file_short <- tail(str_split(old_file, "/")[[1]],1)
-        old_file_short_split <- str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2]
-        old_file_shorter <- str_split(paste(tail(str_split(str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
-        
-        # Read in data frame for each combined data export
-        print(paste0("Reading in: ", new_file_short))
-        data_new <- fread(new_file, sep='|', na.strings = "NULL")
-        # Read in old data
-        print(paste0("Reading in: ", old_file_short))
-        data_old <- fread(old_file, sep='|', na.strings = "NULL")
-        
-        # Combine data by parameter for all regions
-        data_old_combined <- bind_rows(data_old_combined, data_old)
-        data_new_combined <- bind_rows(data_new_combined, data_new)
-        
-        # Full ParameterName for a given file
-        param <- data_new[, unique(ParameterName)]
-        
-        # Record filenames for display in report
-        data_directory[[habitat]][["new_file_name"]][[param]] <- new_file_shorter
-        data_directory[[habitat]][["old_file_name"]][[param]] <- old_file_shorter
-        
-        data_table <- data.table(
-          "parameter" = param,
-          "region" = str_split(region,"_")[[1]][2],
-          "oldFile" = old_file_shorter,
-          "newFile" = new_file_shorter,
-          "nDataOld" = nrow(data_old),
-          "nDataNew" = nrow(data_new)
-        )
-        
-        data_table[ , `:=` (difference = nDataNew - nDataOld)]
-        data_table[ , `:=` (pctChange = round((difference / nDataOld)*100,2))]
-        
-        comparison_table <- bind_rows(comparison_table, data_table)
-      }
+  for(p in cont_params){
+    new_file <- str_subset(wq_cont_files, paste0(p, "-"))
+    new_file_short <- tail(str_split(new_file, "/")[[1]],1)
+    new_file_short_split <- str_split(new_file_short, "Combined_WQ_WC_NUT_cont_")[[1]][2]
+    new_file_shorter <- str_split(paste(tail(str_split(str_split(new_file_short, "Combined_WQ_WC_NUT_cont_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
+    
+    # Read in data frame for each combined data export
+    print(paste0("Reading in: ", new_file_short))
+    data_new <- fread(new_file, sep='|', na.strings = "NULL")
+    
+    #### TEMPORARY for previous (region-split) exports
+    if(p %in% c("Chlorophyll_a_Uncorrected_for_Pheophytin", "Fluorescent_Dissolved_Organic_Matter", "Specific_Conductivity")){
+      old_file <- NA
+      old_file_short <- NA
+      old_file_short_split <- NA
+      old_file_shorter <- NA
+      # Read in old data
+      print(paste0("Reading in: ", old_file_short))
+      data_old <- data_new[0] # Create empty data.table with same column names
+      data_old$SampleDate <- NA
+    } else {
+      old_file <- str_subset(wq_cont_files_old, p)[[1]] 
+      old_file_short <- tail(str_split(old_file, "/")[[1]],1)
+      old_file_short_split <- str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2]
+      old_file_shorter <- str_split(paste(tail(str_split(str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
+      # Read in old data
+      print(paste0("Reading in: ", old_file_short))
+      data_old <- data_old_combined_all[[p]]
     }
+    
+    # Full ParameterName for a given file
+    param <- data_new[, unique(ParameterName)]
+    
+    # Record filenames for display in report
+    data_directory[[habitat]][["new_file_name"]][[param]] <- new_file_shorter
+    data_directory[[habitat]][["old_file_name"]][[param]] <- old_file_shorter
+    
+    data_table <- data.table(
+      "parameter" = param,
+      "oldFile" = old_file_shorter,
+      "newFile" = new_file_shorter,
+      "nDataOld" = nrow(data_old),
+      "nDataNew" = nrow(data_new)
+    )
+    
+    data_table[ , `:=` (difference = nDataNew - nDataOld)]
+    data_table[ , `:=` (pctChange = round((difference / nDataOld)*100,2))]
+    
+    comparison_table <- bind_rows(comparison_table, data_table)
+    
+    data_old_combined <- data_old
+    data_new_combined <- data_new
     
     ##### Comparison checks #### ----
     ## The following are intended to check for inconsistencies between data exports
@@ -541,7 +555,7 @@ if("Continuous" %in% habitats){
     
     ### Provide counts of data by program by parameter
     program_count_table <- bind_rows(program_count_table, program_counts(
-      data_old_combined[Include==1, ], data_new_combined[Include==1, ], habitat, param))
+      data_old_combined, data_new_combined, habitat, param))
     
     ### Grab quantile data
     data_directory[[habitat]][["quantile"]][[param]] <- grab_quantiles(data_new_combined[Include==1, ], habitat, param, type="quantile")
@@ -625,7 +639,7 @@ if("Species" %in% habitats){
     
     qsize <- ifelse(habitat=="Oyster", "Yes", "None")
     
-    p_count_df <- program_counts(data_old[Include==1, ], data_new[Include==1, ], "Species", param, quadsize=qsize)
+    p_count_df <- program_counts(data_old, data_new, "Species", param, quadsize=qsize)
     p_count_df$habitat <- habitat
     program_count_table <- bind_rows(program_count_table, p_count_df)
     

@@ -184,10 +184,15 @@ for(i in 1:length(habitats)){
     cat("  \n")
     cat("## Differences in Program data between exports")
     cat("  \n")
-    
+    cat("Values in red represent data that was removed or re-classified. Values in green represent data that has been added or 
+        re-classified [where nOld or nNew is NA] (either due to a change in the Include value or a new Program).")
+    cat("  \n")
     program_count_table <- data_directory[[h]][["program_count_table"]] %>%
+      # mutate(difference = ifelse(is.na(difference) & is.na(nNew), nOld, 
+      #                            ifelse(is.na(difference) & is.na(nOld), nNew, difference))) %>%
       rowwise() %>%
-      mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
+      # mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
+        mutate(cell_color = ifelse(is.na(LatestDateOld) | is.na(LatestDateNew), "green", ifelse(difference<0, "red", "black"))) %>%
       mutate(difference = cell_spec(difference, color=cell_color)) %>%
       select(-cell_color)
     
