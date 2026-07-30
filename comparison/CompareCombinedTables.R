@@ -29,7 +29,7 @@ source("../seacar_data_location.R")
 # New files in /SEACARdata/
 # Old files in /SEACARdata/archive/YYYY-Mmm-DD, with old_file_date declared as the date below
 
-old_file_date <- "2025-Dec-10"
+old_file_date <- "2026-Mar-06"
 
 new_files <- list.files(seacar_data_location, full.names = TRUE)
 old_files <- list.files((paste0(seacar_data_location,"/archive/",old_file_date)), full.names = TRUE)
@@ -61,7 +61,7 @@ show_columns <- FALSE
 
 # Date of thresholds file to use (this should reflect the same file USF used)
 # i.e. the previous iteration of Database_Thresholds
-thresh_date <- "20260305"
+thresh_date <- "20260331"
 
 ## Variables set to FALSE, script will change to TRUE if conditions met
 columns_differ <- FALSE
@@ -89,19 +89,13 @@ compare_columns <- function(data_old, data_new, old_file_short, new_file_short,
       "Column" = sort(names(data_new)),
       "ColumnType" = sapply(data_new, class)
     )
-    
-    # data_directory[["column_compare"]][[habitat]][[param]][['oldColumns']] <- oldColumns
-    # data_directory[["column_compare"]][[habitat]][[param]][['newColumns']] <- newColumns
-    
     return(list("oldColumns" = oldColumns, "newColumns" = newColumns))
-    
   }
 }
 
 # Compare programs between exports
 compare_programs <- function(data_old, data_new, old_file_short, new_file_short,
                              habitat, param){
-  
   if(length(sort(data_old[, unique(ProgramID)]))!=
      length(sort(data_new[, unique(ProgramID)]))){
     
@@ -207,7 +201,6 @@ program_counts <- function(data_old, data_new, habitat, param, quadsize="None"){
 
 # Run quantiles and grab quantile data
 grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile"){
-  
   if(type=="quantile"){
     grab_val_low <- as.name("LowQuantile")
     grab_val_high <- as.name("HighQuantile")
@@ -215,7 +208,6 @@ grab_quantiles <- function(df, habitat, param, quadsize="None", type="quantile")
     grab_val_low <- as.name("LowThreshold")
     grab_val_high <- as.name("HighThreshold")
   }
-  
   if(quadsize=="None"){
     data <- df[ParameterName==param, ]
     # Use ThresholdID for Total Nitrogen (use Calculated, not All)
@@ -268,7 +260,7 @@ flag_overview <- function(data_new, return = "wide"){
     group_by(flags, ParameterName, ProgramID) %>%
     summarise(n = n(), .groups="keep") %>%
     arrange(ParameterName, flags) %>%
-    filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q","18Q","19Q")) # filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q"))
+    filter(flags %in% c("1Q","2Q","3Q","4Q","5Q","8Q","15Q","16Q","17Q","18Q","19Q"))
     
   # Collect program totals by parameter
   totals <- data_new %>%
@@ -330,6 +322,9 @@ check_species <- function(data_new, habitat){
 # Function to check for Jan 1st Dates (DB will default to Jan 1st, helps to identify errors)
 # Apply to Discrete and "Species" only (not Continuous)
 jan_dates <- function(data_new){data_new[month(SampleDate) == 1 & day(SampleDate) == 1]}
+
+# Function to check for Future dates (dates beyond today)
+future_dates <- function(data_new){data_new[SampleDate > Sys.Date(), ]}
 
 ## Import database thresholds
 ## Latest file available at:
@@ -438,6 +433,9 @@ if("Discrete" %in% habitats){
     ### Collect Jan 1st values
     data_directory[[habitat]][["jan_dates"]][[param]] <- jan_dates(data_new[Include==1, ])
     
+    ### Collect future dates
+    data_directory[[habitat]][["future_dates"]][[param]] <- future_dates(data_new)
+    
     ### The following collects statistics about ValueQualifiers and includes them in the report
     if(collect_vq_data==TRUE){
       ## Begin Value Qualifier Data Collection ----
@@ -485,7 +483,8 @@ if("Continuous" %in% habitats){
   program_count_table <- data.table()
   
   cont_params <- c("Dissolved_Oxygen","Dissolved_Oxygen_Saturation","pH",
-                   "Salinity", "Turbidity", "Water_Temperature")
+                   "Salinity", "Turbidity", "Water_Temperature", "Specific_Conductivity",
+                   "Fluorescent_Dissolved_Organic_Matter", "Chlorophyll_a_Uncorrected_for_Pheophytin")
   
   for(p in cont_params){
     new_file <- str_subset(wq_cont_files, paste0(p, "-"))
@@ -493,29 +492,18 @@ if("Continuous" %in% habitats){
     new_file_short_split <- str_split(new_file_short, "Combined_WQ_WC_NUT_cont_")[[1]][2]
     new_file_shorter <- str_split(paste(tail(str_split(str_split(new_file_short, "Combined_WQ_WC_NUT_cont_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
     
+    # Grab "old" export file, file_short
+    old_file <- str_subset(wq_cont_files_old, paste0(p, "-"))
+    old_file_short <- tail(str_split(old_file, "/")[[1]],1)
+    old_file_short_split <- str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2]
+    old_file_shorter <- str_split(paste(tail(str_split(str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
+    
     # Read in data frame for each combined data export
     print(paste0("Reading in: ", new_file_short))
     data_new <- fread(new_file, sep='|', na.strings = "NULL")
-    
-    #### TEMPORARY for previous (region-split) exports
-    if(p %in% c("Chlorophyll_a_Uncorrected_for_Pheophytin", "Fluorescent_Dissolved_Organic_Matter", "Specific_Conductivity")){
-      old_file <- NA
-      old_file_short <- NA
-      old_file_short_split <- NA
-      old_file_shorter <- NA
-      # Read in old data
-      print(paste0("Reading in: ", old_file_short))
-      data_old <- data_new[0] # Create empty data.table with same column names
-      data_old$SampleDate <- NA
-    } else {
-      old_file <- str_subset(wq_cont_files_old, p)[[1]] 
-      old_file_short <- tail(str_split(old_file, "/")[[1]],1)
-      old_file_short_split <- str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2]
-      old_file_shorter <- str_split(paste(tail(str_split(str_split(old_file_short, "Combined_WQ_WC_NUT_")[[1]][2], "-")[[1]],3),collapse = "-"),".txt")[[1]][1]
-      # Read in old data
-      print(paste0("Reading in: ", old_file_short))
-      data_old <- data_old_combined_all[[p]]
-    }
+    # Read in old data
+    print(paste0("Reading in: ", old_file_short))
+    data_old <- fread(old_file, sep='|', na.strings = "NULL")
     
     # Full ParameterName for a given file
     param <- data_new[, unique(ParameterName)]
@@ -569,6 +557,9 @@ if("Continuous" %in% habitats){
     ### Grab values that fall outside of Expected values (15Q check)
     data_directory[[habitat]][["fifteenQ"]][[param]] <- flag_overview(data_new_combined[Include==1, ], return="fifteen")
     
+    ### Collect future dates
+    data_directory[[habitat]][["future_dates"]][[param]] <- future_dates(data_new)
+    
   }
   data_directory[[habitat]][["comparison_table"]] <- comparison_table
   data_directory[[habitat]][["program_count_table"]] <- program_count_table
@@ -621,6 +612,19 @@ if("Species" %in% habitats){
     data_table[ , `:=` (difference = nDataNew - nDataOld)]
     
     comparison_table <- bind_rows(comparison_table, data_table)
+    
+    ### Check if Oyster exports contain LocationIDs without UniversalReefIDs
+    if(habitat=="Oyster"){
+      data_directory[["Species"]][["OysterReefID"]][[habitat]] <- data_new %>% 
+        filter(is.na(UniversalReefID)) %>%
+        group_by(LocationID, ProgramID, ProgramName, ProgramLocationID, UniversalReefID) %>%
+        reframe(N_Data = n(),
+                minDate = min(SampleDate),
+                maxDate = max(SampleDate))
+    }
+    
+    ### Collect future dates
+    data_directory[["Species"]][["future_dates"]][[habitat]] <- future_dates(data_new)
     
     ##### Comparison checks #### ----
     ## The following are intended to check for inconsistencies between data exports
@@ -741,10 +745,6 @@ for(i in names(data_directory)){
 }
 
 rm(program_counts_df, flag_results_df, fileNameSummary)
-
-# flag_results <- flag_results %>% select(
-#   ProgramID, ParameterName, Habitat, 
-#   "Total Program Data", "1Q", "8Q", "15Q", "16Q", "17Q")
 
 # Create list in format "WorksheetName" = datatable
 ws <- list("Filename Summary" = filename_summary, 

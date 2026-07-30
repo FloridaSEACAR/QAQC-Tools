@@ -185,16 +185,16 @@ for(i in 1:length(habitats)){
     cat("## Differences in Program data between exports")
     cat("  \n")
     cat("Values in red represent data that was removed or re-classified. Values in green represent data that has been added or 
-        re-classified [where nOld or nNew is NA] (either due to a change in the Include value or a new Program).")
+        re-classified [where nOld or nNew is NA] (either due to a change in the Include value or a new Program). ProgramName values in blue
+        represent programs which are managed by RCP and *currently collecting data*.")
     cat("  \n")
     program_count_table <- data_directory[[h]][["program_count_table"]] %>%
-      # mutate(difference = ifelse(is.na(difference) & is.na(nNew), nOld, 
-      #                            ifelse(is.na(difference) & is.na(nOld), nNew, difference))) %>%
       rowwise() %>%
-      # mutate(cell_color = ifelse(difference<0, "red", "black")) %>%
-        mutate(cell_color = ifelse(is.na(LatestDateOld) | is.na(LatestDateNew), "green", ifelse(difference<0, "red", "black"))) %>%
-      mutate(difference = cell_spec(difference, color=cell_color)) %>%
-      select(-cell_color)
+      mutate(cell_color = ifelse(is.na(LatestDateOld) | is.na(LatestDateNew), "green", ifelse(difference<0, "red", "black")),
+             prog_color = ifelse(str_detect(ProgramName, "APCWQM|NERR") & year(LatestDateNew) >= year(Sys.Date())-2, "blue", "black")) %>%
+      mutate(difference = cell_spec(difference, color=cell_color),
+             ProgramName = cell_spec(ProgramName, color = prog_color)) %>%
+      select(-c(cell_color, prog_color))
     
     names(program_count_table) <- gsub("_", " ", names(program_count_table))
     
@@ -410,6 +410,67 @@ for(i in 1:length(habitats)){
     )
     cat("  \n")
     
+  }
+  
+  #####################
+  ###  Future Dates ###
+  #####################
+  
+  # Filter out empty data frames and then combine them
+  non_empty_fut_dfs <- Filter(function(df) nrow(df) > 0, data_directory[[h]][["future_dates"]])
+  future_dates <- bind_rows(non_empty_fut_dfs)
+  
+  if(nrow(future_dates)>0){
+    cat("\\newpage")
+    cat("  \n")
+    cat("## Future Dates")
+    cat("  \n")
+    cat(colorize("FUTURE DATES FOUND", "red"))
+    cat("  \n")
+    print(
+      make_kable(
+        future_dates %>% group_by(Habitat, ProgramID, ProgramName, Year, Month, ParameterName) %>% reframe(n = n()),
+        table_caption = "Summary of Future Dates",
+        format = "latex"
+      )
+    )
+  } else {
+    cat("  \n")
+    cat("## Future Dates")
+    cat("  \n")
+    cat(glue("No future dates found for {h}."))
+    cat("  \n")
+    cat("  \n")
+  }
+  
+  #####################
+  ## UniversalReefID ##
+  #####################
+  
+  if(h=="Species"){
+    cat("  \n")
+    cat("## Oyster UniversalReefID")
+    oyster_urid <- data_directory[[h]]$OysterReefID %>% 
+      bind_rows() %>%
+      mutate(ProgramLocationID = gsub("_", "-", ProgramLocationID))
+    if(nrow(oyster_urid)>0){
+      cat("  \n")
+      cat(colorize("LocationIDs without UniversalReefID values found!", "red"))
+      cat("  \n")
+      print(
+        make_kable(
+          oyster_urid, 
+          table_caption = "Summary of locations missing UniversalReefIDs",
+          format = "latex"
+        )
+      )
+      cat("  \n")
+    } else {
+      cat("  \n")
+      cat("All Oyster LocationIDs have assigned UniversalReefID values.")
+      cat("  \n")
+    }
+    cat("  \n")
   }
   
 }
